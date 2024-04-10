@@ -20,8 +20,8 @@ function Base.setindex!(A, (;val,precision), I)
 end
 
 
-function Base.view(A::WeightedData{T,N}, I) where {T,N}
-	WeightedData(view(A.val,I),view(A.precision,I))
+function Base.view(A::WeightedData{T,N}, I...) where {T,N}
+	WeightedData(view(A.val,I...),view(A.precision,I...))
 end
 
 Base.:+(A::AbstractWeightedData{T,N}, B::AbstractWeightedData{T,N}) where {T,N} = WeightedData(A.val .+ B.val, 1 ./ ( 1 ./ A.precision .+ 1 ./ B.precision))
