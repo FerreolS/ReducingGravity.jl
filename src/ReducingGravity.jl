@@ -19,7 +19,7 @@ using 	FITSIO,
 		OptimPackNextGen
 
 export 	gravi_data_create_bias_mask,
-		gravi_data_detector_cleanup!,
+		gravi_data_detector_cleanup,
 		gravi_compute_badpix,
 		gravi_compute_blink,
 		gravi_compute_profile,
@@ -88,26 +88,27 @@ function gravi_data_create_bias_mask(darkfits::FITS)
 end
 
 
-function gravi_data_detector_cleanup!(	data::AbstractArray{T,3},
+function gravi_data_detector_cleanup(	data::AbstractArray{T,3},
 										illuminated::BitMatrix)  where T
 	avgbias = T(0)
+	cleaneddata = copy(data)
 	@inbounds for n ∈ axes(illuminated,1)
 		#mdata = median(data[n,.!illuminated[n,:],..],dims=1) 
 		mdata = map(median, eachslice(data[n,.!illuminated[n,:],:],dims=2))
-		data[n,:,..] .-= reshape(mdata,1,:)
+		cleaneddata[n,:,..] .-= reshape(mdata,1,:)
 		avgbias += mean(mdata)
 	end
 	avgbias /= size(illuminated,1)
+	return  avgbias,cleaneddata
 end
 
 
 
-function gravi_compute_badpix(	data::AbstractArray{T,N},
+function gravi_compute_badpix(	rawdata::AbstractArray{T,N},
 								illuminated::BitMatrix; 
 								spatialthresold=5, 
 								spatialkernel=(5,5)) where {T,N}
-	data =copy(data)
-	bias = gravi_data_detector_cleanup!(data,illuminated)
+	bias,data = gravi_data_detector_cleanup(rawdata,illuminated)
 	if N==2
 		mdata = data
 	else
@@ -150,15 +151,19 @@ function gravi_create_weighteddata(	rawdata::AbstractArray{T,3},
 	
 	goodpix = copy(goodpix)
 
-	bias = gravi_data_detector_cleanup!(rawdata,illuminated)
+	bias,data = gravi_data_detector_cleanup(rawdata,illuminated)
 
-	blink = gravi_compute_blink(rawdata,bias=bias;kwd...)
-	goodpix .&= (sum(blink,dims=3) .> max(3,0.75 * size(blink,3)))
-	avg = (sum(rawdata.*goodpix.*blink, dims=3) ./ sum(goodpix.*blink, dims=3))[:,:,1]
-	if unbiased
-		wgt =  (sum(goodpix.*blink.*(rawdata .- avg).^2,dims=3).\ (sum(goodpix.*blink,dims=3) .- 3))[:,:,1]
+	if filterblink
+		blink = gravi_compute_blink(data,bias=bias;kwd...)
+		goodpix .&= (sum(blink,dims=3) .> max(3,0.75 * size(blink,3)))
 	else
-		wgt =  (sum(goodpix.*blink.*(rawdata .- avg).^2,dims=3).\ (sum(goodpix.*blink,dims=3) ))[:,:,1]
+		blink = trues(size(data))
+	end
+	avg = (sum(data.*goodpix.*blink, dims=3) ./ sum(goodpix.*blink, dims=3))[:,:,1]
+	if unbiased
+		wgt =  (sum(goodpix.*blink.*(data .- avg).^2,dims=3).\ (sum(goodpix.*blink,dims=3) .- 3))[:,:,1]
+	else
+		wgt =  (sum(goodpix.*blink.*(data .- avg).^2,dims=3).\ (sum(goodpix.*blink,dims=3) ))[:,:,1]
 	end
 	avg[.!(goodpix)] .= zero(T)
 	wgt[.!(goodpix)] .= zero(T)
