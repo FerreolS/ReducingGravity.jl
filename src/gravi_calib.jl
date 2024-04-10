@@ -1,7 +1,3 @@
-struct SpectrumModel{T,A1,P} 
-	bbox::A1
-	preconditionner::P
-end
 
 function fitprofile(data::AbstractWeightedData{T,2},bndbx::C; center_degree=4, σ_degree=4, thrsld=0.1) where{T,C<:CartesianIndices}
 
@@ -13,7 +9,7 @@ function fitprofile(data::AbstractWeightedData{T,2},bndbx::C; center_degree=4, �
 
 	data = view(data,bndbx[firstidx:lastidx,:])
 	
-	specmodel = SpectrumModel{T}(bndbx[firstidx:lastidx,:];maxdeg = max(center_degree,σ_degree), precond=true)
+	specmodel = ProfileModel(bndbx[firstidx:lastidx,:];maxdeg = max(center_degree,σ_degree), precond=true)
 
 	#shp = (sum(data .* wght,dims=1)./ sum(wght,dims=1))[:]
 
@@ -25,7 +21,7 @@ function fitprofile(data::AbstractWeightedData{T,2},bndbx::C; center_degree=4, �
 	σ[1] = 0.5 #std((shp .* ay) ./ sum(shp))
 	θ = (;center=center, σ = σ)
 	params, unflatten = destructure(θ)
-	f(params) = scaledweightedloss(specmodel(;unflatten(params)...),data, wght)
+	f(params) = likelihood(data,specmodel(;unflatten(params)...))
 
 	res = optimize(f, params, NelderMead(),Optim.Options(iterations=10000))
 	xopt = Optim.minimizer(res)

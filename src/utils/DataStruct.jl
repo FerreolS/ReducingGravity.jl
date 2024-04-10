@@ -48,14 +48,14 @@ function ChainRulesCore.rrule( ::typeof(likelihood),A::D,model::AbstractArray) w
 end
 
 
-struct Profile{A}
+struct SpectrumModel{A}
 	center::Vector{Float64}
 	σ::Vector{Float64}
 	λ::Vector{Float64}
 	bbox::A
 end
 
-function (self::Profile)(p)
+function (self::SpectrumModel)(p)
 	(;center,σ,λ) = self
 	cdeg = length(center)
 	cp =  p .^(0:(cdeg-1))'* center
@@ -63,7 +63,11 @@ function (self::Profile)(p)
 	σp = p .^(0:(σdeg-1))'* σ
 	λdeg = length(λ)
  	λp = p .^(0:(λdeg-1))'* λ
-	return (;center=cp,σ=σp,λ=λp)
+	return (;center=cp[1],σ=σp[1],λ=λp[1])
+end
+
+function get_profile(s::SpectrumModel)
+	ProfileModel(s.bbox)(;s.center,s.σ)
 end
 
 struct Transmission{T,B}
@@ -73,3 +77,43 @@ end
 
 (self::Transmission)(x) = Spline(self.SplineBasis,self.coefs)(x)
 (self::Transmission)() = Spline(self.SplineBasis,self.coefs)
+
+
+struct ProfileModel{A1,P} 
+	bbox::A1
+	preconditionner::P
+end
+
+function ProfileModel(bbox::A1;maxdeg=3, precond=false) where {A1}
+	
+	if precond 
+		ax = bbox.indices[1]
+		preconditionner  = [ sqrt(length(ax) /sum(Float64.(ax).^(2*n)) ) for n ∈ 0:maxdeg]
+	else
+		preconditionner  = nothing
+	end
+    ProfileModel{A1,typeof(preconditionner)}(bbox,preconditionner)
+end 
+
+function (self::ProfileModel{A1,P})(;center=[0.0],σ=[1.0],amplitude=[1.0]) where {A1,P}
+	ncenter = length(center)
+	nσ = length(σ)
+	namp = length(amplitude)
+	ax = self.bbox.indices[1]
+	ay = self.bbox.indices[2]
+
+	degmax = max(ncenter,nσ,namp)
+	if P == Nothing
+		u = broadcast(^,ax,(0:(degmax-1))')
+	else
+		u = broadcast(^,ax,(0:(degmax-1))').* self.preconditionner[1:degmax]'
+	end
+	cy = sum(u[:,1:ncenter].*center',dims=2)
+	ampy = sum(u[:,1:namp].*amplitude',dims=2)
+
+	sy = sum(u[:,1:nσ].*σ',dims=2)
+
+	return ampy .* exp.(-1 ./ 2 .*((cy .- ay')./ sy).^2)
+end
+
+(self::ProfileModel)((;center,σ)::SpectrumModel) = self(;center=center, σ=σ)

@@ -149,7 +149,7 @@ find_peaks(vect::AbstractVector, args...; kwds...) =
        return profile
 end =#
 
-function gravi_spectral_calibration(wave::AbstractWeightedData{T,1}, profile::Profile{A}; lines=argon[:,1],hw=2,λorder=3)  where {A,T}
+function gravi_spectral_calibration(wave::AbstractWeightedData{T,1}, profile::SpectrumModel{A}; lines=argon[:,1],hw=2,λorder=3)  where {A,T}
        #argonpeaks = sort!(find_peaks(wave.val,rtol=0.0,nmax=12))
        argonpeaks = argon[:,2]
        np = length(argonpeaks)
@@ -159,7 +159,7 @@ function gravi_spectral_calibration(wave::AbstractWeightedData{T,1}, profile::Pr
        for (i,p) ∈ enumerate(argonpeaks)
               σ = p .^(0:(σdeg-1))'* profile.σ
               rng =  max(round(Int,p-hw),1):min(length(wave),round(Int,p+hw))
-              @show (;center, σ) =  fit_peak(rng,view(wave,rng); center=[Float64(p)],σ=σ)
+              (;center, σ) =  fit_peak(rng,view(wave,rng); center=[Float64(p)],σ=σ)
               #@show J = error_estimation(rng,view(wave,rng);center= center, σ=σ)
               position[i] = center[1]
               width[i] = σ[1]
@@ -212,7 +212,7 @@ function gravi_spectral_calibration(wave::AbstractWeightedData{T,1}, profile::Pr
        #remove first line (usually badly fitted)
        P = hcat( (fitted_pixels[2:end].^n for n=0:3)...)
 
-       @show @reset profile.λ = inv(P'*P)*P'*lines[2:end]
+       @reset profile.λ = inv(P'*P)*P'*lines[2:end]
        return profile
        #return fitted_pixels
 end

@@ -147,6 +147,7 @@ end
 function gravi_create_weighteddata(	rawdata::AbstractArray{T,3},
 									illuminated::BitMatrix,
 									goodpix::BitMatrix; 
+									filterblink=true,
 									unbiased=true, 
 									kwd...) where T
 	
@@ -178,7 +179,7 @@ function gravi_compute_profile(	flats::Vector{<:AbstractWeightedData{T,N}},
 								center_degree=4, 
 								σ_degree=4, 
 								thrsld=0.1) where {T,N,C}
-	profile = Dict{String,Profile{C}}()
+	profile = Dict{String,SpectrumModel{C}}()
 	Threads.@threads for tel1 ∈ 1:4
 		for tel2 ∈ 1:4
 			tel1==tel2 && continue
@@ -186,9 +187,8 @@ function gravi_compute_profile(	flats::Vector{<:AbstractWeightedData{T,N}},
 			for chnl ∈ ["A","B","C","D"]
 				haskey(bboxes,"$tel1$tel2-$chnl-C") || continue
 				bndbx =bboxes["$tel1$tel2-$chnl-C"] 
-				(;val, precision) = view(flatsum,bndbx)
- 				θ = fitprofile(val, precision,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld )
-				p = Profile(θ...,Vector{Float64}(),bndbx)
+ 				θ = fitprofile(flatsum,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld )
+				p = SpectrumModel(θ...,Vector{Float64}(),bndbx)
 				push!(profile,"$tel1$tel2-$chnl-C"=>p) 
 			end
 		end
@@ -197,14 +197,14 @@ function gravi_compute_profile(	flats::Vector{<:AbstractWeightedData{T,N}},
 end
 
 function gravi_extract_profile(	data::AbstractWeightedData{T,N},
-								profile::Profile; 
+								profile::SpectrumModel; 
 								restrict=0.01, 
 								nonnegative=false, 
 								robust=false) where {T,N}
 	bbox = profile.bbox
 	(;val, precision) = view(data,bbox)
 
-	model =  SpectrumModel{T}(bbox)(profile)
+	model =  get_profile(profile)
 	if restrict>0
 		model .*= (model .> restrict)
 	end
@@ -238,9 +238,9 @@ function gravi_extract_profile(	data::AbstractWeightedData{T,N},
 end
 
 function gravi_extract_profile(	data::AbstractWeightedData{T,N},	
-								profile::Dict{String,<:Profile}; 
+								profile::Dict{String,<:SpectrumModel}; 
 								kwds...) where {T,N}
-	profiles = Dict{String,AbstractWeightedData{T,1}}()
+	profiles = Dict{String,AbstractWeightedData{Float64,1}}()
 	for (key,val) ∈ profile
 		push!(profiles,key=>gravi_extract_profile(data ,val; kwds...))
 	end
@@ -248,9 +248,9 @@ function gravi_extract_profile(	data::AbstractWeightedData{T,N},
 end
 
 function gravi_extract_profile_flats(	flats::Vector{<:AbstractWeightedData{T,N}},
-										profile::Dict{String,<:Profile}; 
+										profile::Dict{String,<:SpectrumModel}; 
 										kwds...) where {T,N}
-	spctr = Dict{String,AbstractWeightedData{T,1}}()
+	spctr = Dict{String,AbstractWeightedData{Float64,1}}()
 	Threads.@threads for tel1 ∈ 1:4
 		for tel2 ∈ 1:4
 			tel1==tel2 && continue
@@ -264,6 +264,44 @@ function gravi_extract_profile_flats(	flats::Vector{<:AbstractWeightedData{T,N}}
 	end
 	return spctr
 end
+
+function gravi_extract_profile(	data::AbstractArray{T,N},
+								precision::Union{BitMatrix,AbstractArray{T,N}},
+								profile::Dict{String,<:SpectrumModel}; 
+								kwds...) where {T,N}
+	profiles = Dict{String,AbstractWeightedData{T,1}}()
+	for (key,val) ∈ profile
+		push!(profiles,key=>gravi_extract_profile(data,precision ,val; kwds...))
+	end
+	return profiles
+end
+
+function gravi_extract_profile(	data::AbstractArray{T,N},
+								precision::Union{BitMatrix,AbstractArray{T,N}},
+								profile::SpectrumModel; 
+								restrict=0.01, 
+								nonnegative=false, 
+								robust=false) where {T,N}
+	bbox = profile.bbox
+	val= view(data,bbox)
+
+	model =  get_profile(profile)
+	if restrict>0
+		model .*= (model .> restrict)
+	end
+
+	αprecision =sum(  model.^2 .* precision ,dims=2)[:]
+	α = sum(model .* precision .* val,dims=2)[:] ./ αprecision
+	nanpix = .! isnan.(α)
+	if nonnegative
+		positive = nanpix .& (α .>= T(0))
+	else
+		positive = nanpix
+	end
+	return	positive .* α
+
+end
+
 
 
 function gravi_compute_transmission(	spectra::Dict{String, AbstractWeightedData{T, 1}};  
@@ -299,7 +337,7 @@ end
 
 function gravi_spectral_calibration(	wave::AbstractWeightedData{T, 2},
 										darkwave::AbstractWeightedData{T, 2}, 
-										profile::Dict{String,<:Profile}; 
+										profiles::Dict{String,<:SpectrumModel}; 
 										lines=argon[:,1],
 										hw=2,
 										λorder=3) where T
@@ -318,4 +356,5 @@ function gravi_spectral_calibration(	wave::AbstractWeightedData{T, 2},
 	end
 	return profiles
 end
+
 end # module ReducingGravity
