@@ -26,7 +26,8 @@ export 	gravi_data_create_bias_mask,
 		gravi_extract_profile,
 		gravi_extract_profile_flats,
 		gravi_create_weighteddata,
-		gravi_spectral_calibration
+		gravi_spectral_calibration,
+		gravi_compute_transmission,
 		WeightedData,
 		likelihood
 
@@ -275,18 +276,18 @@ function gravi_compute_transmission(	spectra::Dict{String, AbstractWeightedData{
 	#sp4 = Spline1D(1:360, meanspectrum.val; w=meanspectrum.precision, k=3, bc="zero",s=0.01)
 	B = BSplineBasis(BSplineOrder(3), knt)
 	ncoefs = length(B)
-	coefs = [ [zeros(T,3)...,ones(T,ncoefs-6)...,zeros(T,3)...] for i ∈ 1:nspectra]
+	coefs = [ [zeros(Float64,3)...,ones(Float64,ncoefs-6)...,zeros(Float64,3)...] for i ∈ 1:nspectra]
 	#coefs = [ones(T,ncoefs) for i ∈ 1:nspectra]
 	lamp = meanspectrum.val
 
 	
 	x = (;coefs=coefs)
 	x0, restructure = destructure(x)
-	function loss(;coefs= coefs, lamp=lamp) 
+	function loss(rng,spectraArray,B;coefs::Vector{<:Vector{T1}}= coefs, lamp::Vector{T2}=lamp) where{T1,T2}
 		S = Spline.(B,coefs)
-		return mapreduce((x,y)->likelihood(y,map(x,rng) .* lamp),+,S,spectraArray)
+		return mapreduce((x,y)->likelihood(y,map(x,rng) .* lamp)::promote_type(T1,T2),+,S,spectraArray)
 	end
-	f(x) = loss(;restructure(x)...)
+	f(x) = loss(rng,spectraArray,B;restructure(x)...)
 	xopt = vmlmb(f,  x0 ;autodiff=true, verb=verb,maxeval=maxeval,kwd...)
 	(;coefs) = restructure(xopt)
 
@@ -303,19 +304,18 @@ function gravi_spectral_calibration(	wave::AbstractWeightedData{T, 2},
 										hw=2,
 										λorder=3) where T
 
-	wav = gravi_extract_profile(wave - darkwave, profile)
+	wav = gravi_extract_profile(wave - darkwave, profiles)
 	Threads.@threads for tel1 ∈ 1:4
 		   for tel2 ∈ 1:4
 				  tel1==tel2 && continue
 				  for chnl ∈ ["A","B","C","D"]
 						 chname = "$tel1$tel2-$chnl-C"
-						 haskey(profile,chname) || continue
-						 updatedprofile = gravi_spectral_calibration(wav[chname] ,profile[chname];hw=hw, lines=lines,λorder=λorder)
-						 @show updatedprofile
-						 push!(profile,chname=>updatedprofile) 
+						 haskey(profiles,chname) || continue
+						 updatedprofile = gravi_spectral_calibration(wav[chname] ,profiles[chname];hw=hw, lines=lines,λorder=λorder)
+						 push!(profiles,chname=>updatedprofile) 
 				  end
 		   end
 	end
-	return profile
+	return profiles
 end
 end # module ReducingGravity
