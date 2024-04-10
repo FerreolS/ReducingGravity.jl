@@ -37,7 +37,7 @@ function flagbadpix!(A::WeightedData{T,N},badpix::Union{ Array{Bool, N},BitArray
 end
 
 function likelihood(A::D,model::AbstractArray) where {D<:WeightedData}
-	return sum( (A.val .- model).^2 .* A.precision)
+	return sum( (A.val .- model).^2 .* A.precision)/ 2
 end 
 
 function ChainRulesCore.rrule( ::typeof(likelihood),A::D,model::AbstractArray) where {D<:WeightedData}
