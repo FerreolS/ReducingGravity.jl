@@ -3,54 +3,15 @@ struct SpectrumModel{T,A1,P}
 	preconditionner::P
 end
 
-function SpectrumModel{T}(bbox::A1;maxdeg=3, precond=false) where {T,A1}
-	
-	if precond 
-		ax = bbox.indices[1]
-		preconditionner  = [ sqrt(length(ax) /sum(Float64.(ax).^(2*n)) ) for n ∈ 0:maxdeg]
-	else
-		preconditionner  = 1
-	end
-    SpectrumModel{T,A1,typeof(preconditionner)}(bbox,preconditionner)
-end 
+function fitprofile(data::AbstractWeightedData{T,2},bndbx::C; center_degree=4, σ_degree=4, thrsld=0.1) where{T,C<:CartesianIndices}
 
-function (self::SpectrumModel{T,A1,P})(;center=[0.0],σ=[1.0],amplitude=[1.0]) where {T,A1,P}
-	ncenter = length(center)
-	nσ = length(σ)
-	namp = length(amplitude)
-	ax = self.bbox.indices[1]
-	ay = self.bbox.indices[2]
-
-	degmax = max(ncenter,nσ,namp)
-	if P <:Number
-		u = broadcast(^,ax,(0:(degmax-1))')
-	else
-		u = broadcast(^,ax,(0:(degmax-1))').* self.preconditionner[1:degmax]'
-	end
-	cy = sum(u[:,1:ncenter].*center',dims=2)
-	ampy = sum(u[:,1:namp].*amplitude',dims=2)
-
-	sy = sum(u[:,1:nσ].*σ',dims=2)
-
-	return T.(ampy .* exp.(-1 ./ 2 .*((cy .- ay')./ sy).^2))
-end
-(self::SpectrumModel)((;center,σ)::Profile) = self(;center=center, σ=σ)
-
-function scaledweightedloss(model,data, weights)
-	α = max.(0,sum(model .* weights .* data,dims=2) ./ sum( model .* weights .* model,dims=2) )
-	res = ( α .* model .- data) 
-	return sum(res.^2 .* weights)
-end
-
-function fitprofile(data::AbstractMatrix{T},wght::AbstractMatrix{T},bndbx::C; center_degree=4, σ_degree=4, thrsld=0.1) where{T,C<:CartesianIndices}
-
-	spectra = (sum(data .* wght,dims=2)./ sum(wght,dims=2))[:]
+	fulldata = view(data,bndbx)
+	spectra = (sum(fulldata.val .* fulldata.precision,dims=2)./ sum(fulldata.precision,dims=2))[:]
 	firstidx = findfirst(x -> x>mean(spectra)*thrsld,spectra)
 	lastidx = findlast(x -> x>mean(spectra)*thrsld,spectra)
 
 
-	data = view(data,firstidx:lastidx,:)
-	wght = view(wght,firstidx:lastidx,:)
+	data = view(data,bndbx[firstidx:lastidx,:])
 	
 	specmodel = SpectrumModel{T}(bndbx[firstidx:lastidx,:];maxdeg = max(center_degree,σ_degree), precond=true)
 
