@@ -17,11 +17,12 @@ darkflat,goodpix2  = gravi_create_weighteddata(darkflat,illuminated,goodpix)
 
 
 flat = Vector{WeightedData{Float32, 2,Matrix{Float32}, Matrix{Float32}}}(undef,4)
+cflat = Vector{Array{Float32,3}}(undef,4)
 goodpixflat = Vector{BitMatrix}(undef,4)
 
 Threads.@threads for i=1:4
-	cflat = read(FITS(first(keys(filter(x -> occursin("FLAT$i", x.second.type), flist))))["IMAGING_DATA_SC"]);
-	flat[i],goodpixflat[i]  = gravi_create_weighteddata(cflat,illuminated,goodpix)
+	cflat[i] = read(FITS(first(keys(filter(x -> occursin("FLAT$i", x.second.type), flist))))["IMAGING_DATA_SC"]);
+	flat[i],goodpixflat[i]  = gravi_create_weighteddata(cflat[i],illuminated,goodpix)
 end
 
 goodpix .&= reduce(.&,goodpixflat)
@@ -31,9 +32,11 @@ Threads.@threads for i ∈ 1:4
 	ReducingGravity.flagbadpix!(flat[i],.!goodpix)
 end
 
-profile = gravi_compute_profile(flat .- [darkflat],bboxes,thrsld=0.5)
-spctr = gravi_extract_profile_flats(flat .- [darkflat], profile)
+profiles = gravi_compute_profile(flat .- [darkflat],bboxes,thrsld=0.5)
+spctr = gravi_extract_profile_flats(flat .- [darkflat], profiles)
+ron,gain = gravi_compute_gain(cflat,illuminated,goodpix,profiles)
 lampspectrum = sum(values(spctr)).val ./ length(spctr)
+trans,lamp = gravi_compute_transmission(spctr; maxeval=50)
 
 
 Δtwave = first(filter(x -> occursin(r"(WAVE,LAMP)", x.second.type), flist)).second.Δt
@@ -46,4 +49,9 @@ fwave = FITS(first(filter(x -> (occursin(r"(WAVE,LAMP)", x.second.type) ), flist
 wave =read(fwave["IMAGING_DATA_SC"]);
 wave,goodpix  = gravi_create_weighteddata(wave,illuminated,goodpix)
 
-profile = gravi_spectral_calibration(wave,darkwave, profile)
+wav = gravi_extract_profile(wave - darkwave, profiles)
+profiles = gravi_spectral_calibration(wave,darkwave, profiles)
+
+p2vm12 = read(FITS(first(keys(filter(x -> occursin("P2VM12", x.second.type), flist))))["IMAGING_DATA_SC"]);
+p2vm12wd = gravi_create_weighteddata( p2vm12, illuminated,goodpix,ron, gain);
+#p2vm12pr = gravi_extract_profile(p2vm12wd .- darkflat, profiles)

@@ -70,6 +70,9 @@ function get_profile(s::SpectrumModel)
 	ProfileModel(s.bbox)(;s.center,s.σ)
 end
 
+function get_profile(s::SpectrumModel,bndbox)
+	ProfileModel(bndbox)(;s.center,s.σ)
+end
 struct Transmission{T,B}
 	coefs::Vector{T}
 	SplineBasis::B

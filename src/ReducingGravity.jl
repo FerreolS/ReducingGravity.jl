@@ -28,6 +28,7 @@ export 	gravi_data_create_bias_mask,
 		gravi_create_weighteddata,
 		gravi_spectral_calibration,
 		gravi_compute_transmission,
+		gravi_compute_gain,
 		WeightedData,
 		likelihood
 
@@ -161,17 +162,38 @@ function gravi_create_weighteddata(	rawdata::AbstractArray{T,3},
 	else
 		blink = trues(size(data))
 	end
-	avg = (sum(data.*goodpix.*blink, dims=3) ./ sum(goodpix.*blink, dims=3))[:,:,1]
+	goodblink = goodpix.*blink
+	avg = (sum(data.*goodblink, dims=3) ./ sum(goodblink, dims=3))[:,:,1]
 	if unbiased
-		wgt =  (sum(goodpix.*blink.*(data .- avg).^2,dims=3).\ (sum(goodpix.*blink,dims=3) .- 3))[:,:,1]
+		wgt =  (sum(goodblink.*(data .- avg).^2,dims=3).\ (sum(goodblink,dims=3) .- 3))[:,:,1]
 	else
-		wgt =  (sum(goodpix.*blink.*(data .- avg).^2,dims=3).\ (sum(goodpix.*blink,dims=3) ))[:,:,1]
+		wgt =  (sum(goodblink.*(data .- avg).^2,dims=3).\ (sum(goodblink,dims=3) ))[:,:,1]
 	end
 	avg[.!(goodpix)] .= zero(T)
 	wgt[.!(goodpix)] .= zero(T)
 	weighteddata = WeightedData(avg,wgt)
 	flagbadpix!(weighteddata,.!goodpix)
 	return (weighteddata, goodpix)
+end
+
+
+function gravi_create_weighteddata(	rawdata::AbstractArray{T,3},
+									illuminated::BitMatrix,
+									goodpix::BitMatrix, 
+									ron,
+									gain;
+									kwd...) where T
+	
+
+	bias,data = gravi_data_detector_cleanup(rawdata,illuminated)
+
+	avg = data.*goodpix
+	wgt = goodpix ./ (T.(ron).^2 .+ T.(gain) .\ max.(0,avg .+ T.(bias)) )
+
+	#avg[.!(goodpix)] .= zero(T)
+	#wgt[.!(goodpix)] .= zero(T)
+	weighteddata = WeightedData(avg,wgt)
+	return weighteddata
 end
 
 function gravi_compute_profile(	flats::Vector{<:AbstractWeightedData{T,N}},
@@ -333,6 +355,8 @@ function gravi_compute_transmission(	spectra::Dict{String, AbstractWeightedData{
 	return (transmissions, lamp)
 
 end
+
+
 
 
 function gravi_spectral_calibration(	wave::AbstractWeightedData{T, 2},
