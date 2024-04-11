@@ -27,7 +27,7 @@ export 	gravi_data_create_bias_mask,
 		gravi_extract_profile_flats,
 		gravi_create_weighteddata,
 		gravi_spectral_calibration,
-		gravi_compute_transmission,
+		gravi_compute_transmissions,
 		gravi_compute_gain,
 		WeightedData,
 		likelihood
@@ -201,7 +201,8 @@ function gravi_compute_profile(	flats::Vector{<:AbstractWeightedData{T,N}},
 								center_degree=4, 
 								σ_degree=4, 
 								thrsld=0.1) where {T,N,C}
-	profile = Dict{String,SpectrumModel{C}}()
+	#profile = Dict{String,SpectrumModel{C,Nothing}}()
+	profile = Dict{String,SpectrumModel}()
 	Threads.@threads for tel1 ∈ 1:4
 		for tel2 ∈ 1:4
 			tel1==tel2 && continue
@@ -210,7 +211,7 @@ function gravi_compute_profile(	flats::Vector{<:AbstractWeightedData{T,N}},
 				haskey(bboxes,"$tel1$tel2-$chnl-C") || continue
 				bndbx =bboxes["$tel1$tel2-$chnl-C"] 
  				θ = fitprofile(flatsum,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld )
-				p = SpectrumModel(θ...,Vector{Float64}(),bndbx)
+				p = SpectrumModel(θ...,Vector{Float64}(),Vector{Transmission{Nothing}}(),bndbx)
 				push!(profile,"$tel1$tel2-$chnl-C"=>p) 
 			end
 		end
@@ -218,141 +219,38 @@ function gravi_compute_profile(	flats::Vector{<:AbstractWeightedData{T,N}},
 	return profile
 end
 
-function gravi_extract_profile(	data::AbstractWeightedData{T,N},
-								profile::SpectrumModel; 
-								restrict=0.01, 
-								nonnegative=false, 
-								robust=false) where {T,N}
-	bbox = profile.bbox
-	(;val, precision) = view(data,bbox)
+function gravi_compute_transmissions(	flats::Vector{<:AbstractWeightedData{T,N}},
+										darkflat::AbstractWeightedData{T,N},
+										profiles::Dict{String,<:SpectrumModel};
+										kwds...) where {T,N} 
 
-	model =  get_profile(profile)
-	if restrict>0
-		model .*= (model .> restrict)
-	end
-
-	αprecision =sum(  model.^2 .* precision ,dims=2)[:]
-	α = sum(model .* precision .* val,dims=2)[:] ./ αprecision
-	nanpix = .! isnan.(α)
-	if nonnegative
-		positive = nanpix .& (α .>= T(0))
-	else
-		positive = nanpix
-	end
-	wd = WeightedData(positive .* α, positive .* αprecision)
-
-	if robust # Talwar hard descender
-		res = sqrt.(precision) .* (wd.val  .* model .- val) 
-		
-		good = (T(-2.795) .< res .<  T(2.795))
-		αprecision =sum( good .* model.^2 .* precision ,dims=2)[:]
-		α = sum(good .* model .* precision .* val,dims=2)[:] ./ αprecision
-		
-		nanpix = .! isnan.(α)
-		if nonnegative
-			positive = nanpix .& (α .>= T(0))
-		else
-			positive = nanpix
-		end
-		wd = WeightedData(positive .* α, positive .* αprecision)
-	end
-	return wd
-end
-
-function gravi_extract_profile(	data::AbstractWeightedData{T,N},	
-								profile::Dict{String,<:SpectrumModel}; 
-								kwds...) where {T,N}
-	profiles = Dict{String,AbstractWeightedData{Float64,1}}()
-	for (key,val) ∈ profile
-		push!(profiles,key=>gravi_extract_profile(data ,val; kwds...))
-	end
-	return profiles
-end
-
-function gravi_extract_profile_flats(	flats::Vector{<:AbstractWeightedData{T,N}},
-										profile::Dict{String,<:SpectrumModel}; 
-										kwds...) where {T,N}
-	spctr = Dict{String,AbstractWeightedData{Float64,1}}()
-	Threads.@threads for tel1 ∈ 1:4
-		for tel2 ∈ 1:4
-			tel1==tel2 && continue
-			for chnl ∈ ["A","B","C","D"]
-				haskey(profile,"$tel1$tel2-$chnl-C") || continue
-				prfl =profile["$tel1$tel2-$chnl-C"] 
-				push!(spctr,"$tel1-$tel1$tel2-$chnl-C"=>gravi_extract_profile(flats[tel1],prfl; kwds...))
-				push!(spctr,"$tel2-$tel1$tel2-$chnl-C"=>gravi_extract_profile(flats[tel2],prfl; kwds...))
-			end
-		end
-	end
-	return spctr
-end
-
-function gravi_extract_profile(	data::AbstractArray{T,N},
-								precision::Union{BitMatrix,AbstractArray{T,N}},
-								profile::Dict{String,<:SpectrumModel}; 
-								kwds...) where {T,N}
-	profiles = Dict{String,AbstractWeightedData{T,1}}()
-	for (key,val) ∈ profile
-		push!(profiles,key=>gravi_extract_profile(data,precision ,val; kwds...))
-	end
-	return profiles
-end
-
-function gravi_extract_profile(	data::AbstractArray{T,N},
-								precision::Union{BitMatrix,AbstractArray{T,N}},
-								profile::SpectrumModel; 
-								restrict=0.01, 
-								nonnegative=false, 
-								robust=false) where {T,N}
-	bbox = profile.bbox
-	val= view(data,bbox)
-
-	model =  get_profile(profile)
-	if restrict>0
-		model .*= (model .> restrict)
-	end
-
-	αprecision =sum(  model.^2 .* precision ,dims=2)[:]
-	α = sum(model .* precision .* val,dims=2)[:] ./ αprecision
-	nanpix = .! isnan.(α)
-	if nonnegative
-		positive = nanpix .& (α .>= T(0))
-	else
-		positive = nanpix
-	end
-	return	positive .* α
-
-end
-
-
-
-function gravi_compute_transmission(	spectra::Dict{String, AbstractWeightedData{T, 1}};  
-										verb=10,maxeval=50, kwd...) where T 
-	spectraArray =values(spectra)
+	spectra = gravi_extract_profile_flats(flats .- [darkflat], profiles)
+	
 	nspectra = length(spectra)
-	meanspectrum = sum(spectraArray) / nspectra
+	meanspectrum = sum(values(spectra)) / nspectra
 	rng= 1:length(meanspectrum)
 	knt = SVector{18,Float32}(1.0, 24.0, 35.0, 41.0, 46.0, 58.0, 69.0, 91.0, 114.0, 125.0, 136.0, 159.0, 181.0, 226.0, 271.0, 294.0, 316.0, 360.0)
 	#sp4 = Spline1D(1:360, meanspectrum.val; w=meanspectrum.precision, k=3, bc="zero",s=0.01)
 	B = BSplineBasis(BSplineOrder(3), knt)
 	ncoefs = length(B)
-	coefs = [ [zeros(Float64,3)...,ones(Float64,ncoefs-6)...,zeros(Float64,3)...] for i ∈ 1:nspectra]
+	initcoefs =  [zeros(Float64,3)...,ones(Float64,ncoefs-6)...,zeros(Float64,3)...] 
 	#coefs = [ones(T,ncoefs) for i ∈ 1:nspectra]
 	lamp = meanspectrum.val
 
-	
-	x = (;coefs=coefs)
-	x0, restructure = destructure(x)
-	function loss(rng,spectraArray,B;coefs::Vector{<:Vector{T1}}= coefs, lamp::Vector{T2}=lamp) where{T1,T2}
-		S = Spline.(B,coefs)
-		return mapreduce((x,y)->likelihood(y,map(x,rng) .* lamp)::promote_type(T1,T2),+,S,spectraArray)
-	end
-	f(x) = loss(rng,spectraArray,B;restructure(x)...)
-	xopt = vmlmb(f,  x0 ;autodiff=true, verb=verb,maxeval=maxeval,kwd...)
-	(;coefs) = restructure(xopt)
+	for (key,profile) ∈ profiles 
+		tel1 = key[1] 
+		tel2 = key[2]
+		key1 = "$tel1-$key" 
+		key2 = "$tel2-$key" 
+		transmissions = [gravi_fit_transmission( spectra[key1],lamp,copy(initcoefs),B; kwds...)
+						gravi_fit_transmission( spectra[key2],lamp,copy(initcoefs),B; kwds...)]
+		@reset profile.transmissions = transmissions
 
-	transmissions = Dict(val=>Transmission(coefs[i],B) for (i,val) ∈ enumerate(keys(spectra)))
-	return (transmissions, lamp)
+		
+		push!(profiles, key=>profile)
+	end
+	
+	return (profiles, lamp)
 
 end
 

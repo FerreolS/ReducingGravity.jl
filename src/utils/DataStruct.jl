@@ -48,10 +48,21 @@ function ChainRulesCore.rrule( ::typeof(likelihood),A::D,model::AbstractArray) w
 end
 
 
-struct SpectrumModel{A}
+struct Transmission{B}
+	coefs::Vector{Float64}
+	SplineBasis::B
+end
+
+(self::Transmission)(x) = Spline(self.SplineBasis,self.coefs)(x)
+(self::Transmission)() = Spline(self.SplineBasis,self.coefs)
+
+
+
+struct SpectrumModel{A,B}
 	center::Vector{Float64}
 	σ::Vector{Float64}
 	λ::Vector{Float64}
+	transmissions::Vector{Transmission{B}}
 	bbox::A
 end
 
@@ -73,14 +84,6 @@ end
 function get_profile(s::SpectrumModel,bndbox)
 	ProfileModel(bndbox)(;s.center,s.σ)
 end
-struct Transmission{T,B}
-	coefs::Vector{T}
-	SplineBasis::B
-end
-
-(self::Transmission)(x) = Spline(self.SplineBasis,self.coefs)(x)
-(self::Transmission)() = Spline(self.SplineBasis,self.coefs)
-
 
 struct ProfileModel{A1,P} 
 	bbox::A1
