@@ -37,7 +37,7 @@ spctr = gravi_extract_profile_flats(flat .- [darkflat], profiles)
 ron,gain = gravi_compute_gain(cflat,illuminated,goodpix,profiles)
 lampspectrum = sum(values(spctr)).val ./ length(spctr)
 #trans,lamp = gravi_compute_transmission(spctr; maxeval=50)
-trans,lamp = gravi_compute_transmissions(flat,darkflat,profiles)
+profiles,lamp = gravi_compute_transmissions(flat,darkflat,profiles)
 
 
 Δtwave = first(filter(x -> occursin(r"(WAVE,LAMP)", x.second.type), flist)).second.Δt

@@ -9,6 +9,7 @@ end
 AbstractWeightedData{T,N} = WeightedData{T,N,A,B} where {T,N,A,B}
 
 Base.size(A::WeightedData) = size(A.val)
+Base.size(A::WeightedData,n::Int) = size(A.val,n)
 Base.length(A::WeightedData) = prod(size(A))
 
 Base.getindex(A::WeightedData, I::Vararg{Int, N}) where N	= (;val=A.val[I],precision=A.precision[I])
@@ -27,8 +28,8 @@ end
 Base.:+(A::AbstractWeightedData{T,N}, B::AbstractWeightedData{T,N}) where {T,N} = WeightedData(A.val .+ B.val, 1 ./ ( 1 ./ A.precision .+ 1 ./ B.precision))
 Base.:-(A::AbstractWeightedData{T,N}, B::AbstractWeightedData{T,N}) where {T,N} = WeightedData(A.val .- B.val, 1 ./ ( 1 ./ A.precision .+ 1 ./ B.precision))
 Base.:-(A::AbstractWeightedData{T,N}, B::AbstractArray{T,N}) where {T,N} = WeightedData(A.val .- B, A.precision )
-Base.:/(A::AbstractWeightedData, B::Number)  = WeightedData(A.val ./ B, B.^2 .* A.precision)
-Base.:*( B::Number, A::AbstractWeightedData)  = WeightedData(A.val .* B,  A.precision ./ B.^2 )
+Base.:/(A::AbstractWeightedData, B)  = WeightedData(A.val ./ B, B.^2 .* A.precision)
+Base.:*( B, A::AbstractWeightedData)  = WeightedData(A.val .* B,  A.precision ./ B.^2 )
 Base.:*(A::AbstractWeightedData, B::Number)  = B * A
 
 function flagbadpix!(A::WeightedData{T,N},badpix::Union{ Array{Bool, N},BitArray{N}}) where {T,N}
