@@ -21,7 +21,7 @@ function fitprofile(data::AbstractWeightedData{T,2},bndbx::C; center_degree=4, �
 	σ[1] = 0.5 #std((shp .* ay) ./ sum(shp))
 	θ = (;center=center, σ = σ)
 	params, unflatten = destructure(θ)
-	f(params) = likelihood(data,specmodel(;unflatten(params)...))
+	f(params) = scaledlikelihood(data,specmodel(;unflatten(params)...))
 
 	res = optimize(f, params, NelderMead(),Optim.Options(iterations=10000))
 	xopt = Optim.minimizer(res)

@@ -47,6 +47,20 @@ function ChainRulesCore.rrule( ::typeof(likelihood),A::D,model::AbstractArray) w
     return  sum(r.*rp) / 2, likelihood_pullback
 end
 
+function scaledlikelihood(A::D,model::AbstractArray) where {D<:WeightedData}
+	α = max.(0,sum(model .* A.precision .* A.val,dims=2) ./ sum( model .*  A.precision .* model,dims=2) )
+	
+	res = ( α .* model .- A.val) 
+	return sum(res.^2 .* A.precision)/2
+end
+ 
+function ChainRulesCore.rrule( ::typeof(scaledlikelihood),A::D,model::AbstractArray) where {D<:WeightedData}
+	α = max.(0,sum(model .* A.precision .* A.val,dims=2) ./ sum( model .*  A.precision .* model,dims=2) )
+	r =( α .*model .- A.val)
+	rp = r .* A.precision
+    likelihood_pullback(Δy) = (NoTangent(),NoTangent(), α .* rp .* Δy)
+    return  sum(r.*rp) / 2, likelihood_pullback
+end
 
 struct Transmission{B}
 	coefs::Vector{Float64}
