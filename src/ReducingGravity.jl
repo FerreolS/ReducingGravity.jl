@@ -235,12 +235,10 @@ function gravi_compute_profile(	flats::Vector{<:AbstractWeightedData{T,N}},
 	return profile
 end
 
-function gravi_compute_transmissions(	flats::Vector{<:AbstractWeightedData{T,N}},
-										darkflat::AbstractWeightedData{T,N},
+function gravi_compute_transmissions(	spectra::Dict{String, AbstractWeightedData{T,N}},
 										profiles::Dict{String,<:SpectrumModel};
 										kwds...) where {T,N} 
 
-	spectra = gravi_extract_profile_flats(flats .- [darkflat], profiles)
 	
 	nspectra = length(spectra)
 	meanspectrum = sum(values(spectra)) / nspectra
@@ -253,7 +251,8 @@ function gravi_compute_transmissions(	flats::Vector{<:AbstractWeightedData{T,N}}
 	#coefs = [ones(T,ncoefs) for i ∈ 1:nspectra]
 	lamp = meanspectrum.val
 
-	for (key,profile) ∈ profiles 
+	pr_array = Vector{Pair{String,<:SpectrumModel }}(undef,length(profiles))
+	Threads.@threads for (i,(key,profile)) ∈ collect(enumerate(profiles) )
 		tel1 = key[1] 
 		tel2 = key[2]
 		key1 = "$tel1-$key" 
@@ -261,11 +260,10 @@ function gravi_compute_transmissions(	flats::Vector{<:AbstractWeightedData{T,N}}
 		transmissions = [gravi_fit_transmission( spectra[key1],lamp,copy(initcoefs),B; kwds...)
 						gravi_fit_transmission( spectra[key2],lamp,copy(initcoefs),B; kwds...)]
 		@reset profile.transmissions = transmissions
-
-		
-		push!(profiles, key=>profile)
+		pr_array[i] = key=>profile
 	end
-	
+	profiles = Dict(pr_array)
+
 	return (profiles, lamp)
 
 end
