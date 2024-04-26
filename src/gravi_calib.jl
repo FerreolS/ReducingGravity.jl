@@ -265,6 +265,111 @@ function gravi_compute_transmission_and_lamp(	spectra::Dict{String, AbstractWeig
 
 end
 
+function gravi_extract_profile_flats_from_p2vm(	P2VM::Dict{String, AbstractWeightedData{T, 2}}, 
+												dark::AbstractWeightedData{T,N},
+												profiles::Dict{String,<:SpectrumModel}; 
+												kwds...
+											) where {T,N}
+
+	spctr = Dict{String,AbstractWeightedData{Float64,1}}()
+	
+	for (baseline,data) ∈ P2VM
+		tel1 = baseline[5]
+		tel2 = baseline[6]
+	
+		for (key,profile) ∈ profiles 
+			t1 = key[1] 
+			t2 = key[2]
+			
+			ill1 = (t1 == tel1) || (t1 == tel2) 
+			ill2 = (t2 == tel1) || (t2 == tel2) 
+			(ill1 && ill2 ) && continue # interferometric channel
+			(!ill1 && !ill2) && continue # non illuminated channel
+			name = (ill1 ? "$t1-$key" : "$t2-$key") 
+
+			pr = gravi_extract_profile(data - dark,profile;kwds...)
+			if haskey(spctr,name)
+				pr = (pr +  spctr[name])/2
+			end 
+			#sptr_array[i] = name=>pr
+			push!(spctr,name=>pr)
+		end
+		
+	end
+	#spctr = Dict(sptr_array)
+	return spctr
+	
+
+end
+
+
+function gravi_compute_gain_from_p2vm(	P2VM::Dict{String, AbstractWeightedData{T, 2}}, 
+										profiles::Dict{String,<:SpectrumModel},
+										goodpix::BitMatrix; 
+										restrict=0.01, 
+										kwds...
+											) where {T}
+											
+	sz = size(first(values(P2VM)))
+	avg = Array{T,3}(undef,sz...,5)
+	prec = Array{T,3}(undef,sz...,5)
+	ill = falses(sz)
+	ind = ones(Int,length(profiles))
+
+	for (i,(key,profile)) ∈ enumerate(profiles )
+
+		bbox = profile.bbox
+
+		if restrict>0
+			model =  get_profile(profile, bbox)
+			bbox = bbox[model .> restrict]
+		end
+		
+		for (baseline,data) ∈ P2VM
+			tel1,tel2 = baseline[5] , baseline[6]
+			#tel1,tel2 = baseline[5] < baseline[6] ? (baseline[5] , baseline[6]) : (baseline[6] , baseline[5])
+
+		
+			t1,t2 = key[1] , key[2] 
+			#t1,t2 = key[1] < key[2] ? (key[1],key[2]) : (key[2],key[1] )
+			
+			ill1 = (t1 == tel1) || (t1 == tel2) 
+			ill2 = (t2 == tel1) || (t2 == tel2) 
+			(ill1 && ill2 ) && continue # interferometric channel
+			if (!ill1 && !ill2)  # non illuminated channel
+				idx =5
+			else 
+				idx =  ind[i]
+				ind[i] += 1
+			end 
+			
+			d = view(data,bbox)
+			view(avg,bbox,idx)  .= d.val[:]
+			view(prec,bbox,idx) .= d.precision[:]
+			view(ill,bbox) .= true
+		end
+		
+	end
+	usable = ill .& goodpix  .& reduce(.&,prec .!=0, dims=3,init=true)[:,:,1]
+	return build_ron_and_gain(usable,avg,prec)
+
+end
+
+
+function build_ron_and_gain(usable::BitMatrix,avg::Array{T,3},prec::Array{T,3}) where T
+	sz = size(usable)
+	gain = zeros(T,sz[1])
+	ron = zeros(T,sz[1])
+	for i ∈ axes(usable,1)
+		u = findall(usable[i,:] )
+		a = (view(avg[i,:,:],u,:) .- view(avg[i,:,:],u,5))[:]
+		v = (1 ./ view(prec[i,:,:],u,:) .+ 1 ./ view(prec[i,:,5],u))[:]
+		P = hcat(ones(length(a)), a)	
+		ron[i], gain[i] = inv(P'*P) * P' * v
+	end
+	return 1 ./ gain, ron
+end
+
 
 #= 
 function test(sm::SpectrumModel{T};center=[0.0],fwhm=[1.0],amplitude=[1.0]) where {T}

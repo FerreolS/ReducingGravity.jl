@@ -12,6 +12,8 @@ fdark = FITS(first(filter(x -> (occursin(r"(DARK)", x.second.type) && x.second.�
 
 darkflat = read(fdark["IMAGING_DATA_SC"]);
 goodpix = gravi_compute_badpix(darkflat,illuminated)
+illuminated = illuminated .|| .!goodpix
+
 
 darkflat,goodpix2  = gravi_create_weighteddata(darkflat,illuminated,goodpix)
 
@@ -33,11 +35,11 @@ Threads.@threads for i ∈ 1:4
 end
 
 profiles = gravi_compute_profile(flat .- [darkflat],bboxes,thrsld=0.5)
-spctr = gravi_extract_profile_flats(flat .- [darkflat], profiles)
-ron,gain = gravi_compute_gain(cflat,illuminated,goodpix,profiles)
-lampspectrum = sum(values(spctr)).val ./ length(spctr)
+#spctr = gravi_extract_profile_flats(flat .- [darkflat], profiles)
+#ron,gain = gravi_compute_gain(cflat,illuminated,goodpix,profiles)
+#lampspectrum = sum(values(spctr)).val ./ length(spctr)
 #trans,lamp = gravi_compute_transmission(spctr; maxeval=50)
-profiles,lamp = gravi_compute_transmissions(flat,darkflat,profiles)
+#profiles,lamp = gravi_compute_transmissions(spctr,profiles)
 
 
 Δtwave = first(filter(x -> occursin(r"(WAVE,LAMP)", x.second.type), flist)).second.Δt
@@ -53,6 +55,21 @@ wave,goodpix  = gravi_create_weighteddata(wave,illuminated,goodpix)
 wav = gravi_extract_profile(wave - darkwave, profiles)
 profiles = gravi_spectral_calibration(wave,darkwave, profiles)
 
-p2vm12 = read(FITS(first(keys(filter(x -> occursin("P2VM12", x.second.type), flist))))["IMAGING_DATA_SC"]);
-p2vm12wd = gravi_create_weighteddata( p2vm12, illuminated,goodpix,ron, gain);
-#p2vm12pr = gravi_extract_profile(p2vm12wd .- darkflat, profiles)
+
+
+len_p2vm = length(filter(x -> occursin("P2VM", x.second.type), flist))
+P2VM = Vector{Pair{String, Array{Float32, 3}}}(undef,len_p2vm)
+P2VMwd = Vector{Pair{String,AbstractWeightedData{Float32,2}}}(undef,len_p2vm)
+Threads.@threads for (i,pv2mfile) ∈ collect(enumerate(values(filter(x -> occursin("P2VM", x.second.type), flist))))
+	rawdata =read(FITS(pv2mfile.path)["IMAGING_DATA_SC"])
+	P2VM[i] = pv2mfile.type =>rawdata
+	data,_ = gravi_create_weighteddata(rawdata,illuminated,goodpix; filterblink=true, blinkkernel=(1,1,9),keepbias=true)
+	P2VMwd[i] = pv2mfile.type =>data
+end
+
+P2VM = Dict(P2VM)
+P2VMwd = Dict(P2VMwd)
+
+spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkflat,profiles)
+profiles,lamp = gravi_compute_transmissions(spctr,profiles)
+gain, ron = gravi_compute_gain_from_p2vm(P2VMwd,profiles,goodpix)

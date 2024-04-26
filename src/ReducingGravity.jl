@@ -24,12 +24,14 @@ export 	gravi_data_create_bias_mask,
 		gravi_compute_blink,
 		gravi_compute_profile,
 		gravi_extract_profile,
-		gravi_extract_profile_flats,
+		gravi_extract_profile_flats_from_p2vm,
+		gravi_compute_gain_from_p2vm,
 		gravi_create_weighteddata,
 		gravi_spectral_calibration,
 		gravi_compute_transmissions,
 		gravi_compute_gain,
 		WeightedData,
+		AbstractWeightedData,
 		likelihood
 
 
