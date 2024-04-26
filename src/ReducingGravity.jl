@@ -92,17 +92,32 @@ end
 
 
 function gravi_data_detector_cleanup(	data::AbstractArray{T,3},
-										illuminated::BitMatrix)  where T
-	avgbias = T(0)
+										illuminated::BitMatrix;
+										keepbias=true,
+										meanbias = false, kwd...)  where T
+	if meanbias
+		avgbias = T(0)
+	else
+		avgbias = zeros(T,size(data,1),1)
+	end
 	cleaneddata = copy(data)
 	@inbounds for n ∈ axes(illuminated,1)
 		#mdata = median(data[n,.!illuminated[n,:],..],dims=1) 
 		mdata = map(median, eachslice(data[n,.!illuminated[n,:],:],dims=2))
 		cleaneddata[n,:,..] .-= reshape(mdata,1,:)
-		avgbias += mean(mdata)
+		if meanbias
+			avgbias += mean(mdata)
+		else 
+			avgbias[n] = mean(mdata)
+		end
 	end
-	avgbias /= size(illuminated,1)
-	return  avgbias,cleaneddata
+	if meanbias
+		avgbias /= size(illuminated,1)
+	end
+	if keepbias
+		cleaneddata .+= avgbias
+	end
+	return  avgbias,cleaneddata 
 end
 
 
@@ -133,7 +148,7 @@ function gravi_compute_blink(	data::AbstractArray{T,3};
 								blinkkernel=(1,1,5),
 								bias=20,
 								kwd...) where {T}
-	bias = T(bias)
+	#bias = T(bias)
 	#mdata = map(median, eachslice(data,dims=(1,2)))
 	#mdata = dropdims(median(data, dims=3),dims=3) # median(, dims=) is type unstable
 	mdata = map(x->quantile(x,0.5), eachslice(data,dims=(1,2)))
@@ -155,7 +170,7 @@ function gravi_create_weighteddata(	rawdata::AbstractArray{T,3},
 	
 	goodpix = copy(goodpix)
 
-	bias,data = gravi_data_detector_cleanup(rawdata,illuminated)
+	bias,data = gravi_data_detector_cleanup(rawdata,illuminated;kwd...)
 
 	if filterblink
 		blink = gravi_compute_blink(data,bias=bias;kwd...)
