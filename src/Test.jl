@@ -70,6 +70,6 @@ end
 P2VM = Dict(P2VM)
 P2VMwd = Dict(P2VMwd)
 
-spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkflat,profiles)
+darkp2vm, gain, rov = gravi_compute_gain_from_p2vm(P2VMwd,profiles,goodpix)
+spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkp2vm,profiles)
 profiles,lamp = gravi_compute_transmissions(spctr,profiles)
-gain, ron = gravi_compute_gain_from_p2vm(P2VMwd,profiles,goodpix)

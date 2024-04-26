@@ -277,7 +277,7 @@ function gravi_spectral_calibration(	wave::AbstractWeightedData{T, 2},
 										darkwave::AbstractWeightedData{T, 2}, 
 										profiles::Dict{String,<:SpectrumModel}; 
 										lines=argon[:,1],
-										hw=2,
+										guess=argon[:,2],
 										λorder=3) where T
 
 	wav = gravi_extract_profile(wave - darkwave, profiles)
@@ -287,7 +287,7 @@ function gravi_spectral_calibration(	wave::AbstractWeightedData{T, 2},
 				  for chnl ∈ ["A","B","C","D"]
 						 chname = "$tel1$tel2-$chnl-C"
 						 haskey(profiles,chname) || continue
-						 updatedprofile = gravi_spectral_calibration(wav[chname] ,profiles[chname];hw=hw, lines=lines,λorder=λorder)
+						 updatedprofile = gravi_spectral_calibration(wav[chname] ,profiles[chname];lines=lines, guess=guess, λorder=λorder)
 						 push!(profiles,chname=>updatedprofile) 
 				  end
 		   end

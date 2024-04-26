@@ -323,6 +323,8 @@ function gravi_compute_gain_from_p2vm(	P2VM::Dict{String, AbstractWeightedData{T
 		if restrict>0
 			model =  get_profile(profile, bbox)
 			bbox = bbox[model .> restrict]
+		else
+			bbox = bbox[:]
 		end
 		
 		for (baseline,data) ∈ P2VM
@@ -351,7 +353,9 @@ function gravi_compute_gain_from_p2vm(	P2VM::Dict{String, AbstractWeightedData{T
 		
 	end
 	usable = ill .& goodpix  .& reduce(.&,prec .!=0, dims=3,init=true)[:,:,1]
-	return build_ron_and_gain(usable,avg,prec)
+	gain, rov = build_ron_and_gain(usable,avg,prec)
+	darkp2vm = WeightedData(avg[:,:,5],prec[:,:,5])
+	return darkp2vm,gain, rov
 
 end
 
@@ -359,15 +363,15 @@ end
 function build_ron_and_gain(usable::BitMatrix,avg::Array{T,3},prec::Array{T,3}) where T
 	sz = size(usable)
 	gain = zeros(T,sz[1])
-	ron = zeros(T,sz[1])
+	rov = zeros(T,sz[1])
 	for i ∈ axes(usable,1)
 		u = findall(usable[i,:] )
 		a = (view(avg[i,:,:],u,:) .- view(avg[i,:,:],u,5))[:]
 		v = (1 ./ view(prec[i,:,:],u,:) .+ 1 ./ view(prec[i,:,5],u))[:]
 		P = hcat(ones(length(a)), a)	
-		ron[i], gain[i] = inv(P'*P) * P' * v
+		rov[i], gain[i] = inv(P'*P) * P' * v
 	end
-	return 1 ./ gain, ron
+	return 1 ./ gain, rov
 end
 
 

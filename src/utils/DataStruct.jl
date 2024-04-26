@@ -11,6 +11,7 @@ AbstractWeightedData{T,N} = WeightedData{T,N,A,B} where {T,N,A,B}
 Base.size(A::WeightedData) = size(A.val)
 Base.size(A::WeightedData,n::Int) = size(A.val,n)
 Base.length(A::WeightedData) = prod(size(A))
+Base.axes(A::WeightedData,n::Int) = axes(A.val,n)
 
 Base.getindex(A::WeightedData, I::Vararg{Int, N}) where N	= (;val=A.val[I],precision=A.precision[I])
 Base.getindex(A::WeightedData, I::Int)	= (;val=A.val[I],precision=A.precision[I])
