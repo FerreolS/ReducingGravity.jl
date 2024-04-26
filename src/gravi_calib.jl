@@ -121,15 +121,20 @@ function gravi_extract_profile(	data::AbstractArray{T,N},
 								nonnegative=false, 
 								robust=false) where {T,N}
 	bbox = profile.bbox
-	val= view(data,bbox)
-
+	if N==2
+		val= view(data,bbox)
+		prec= view(precision,bbox)
+	else
+		val= view(data,bbox,:)
+		prec= view(precision,bbox,:)
+	end
 	model =  get_profile(profile)
 	if restrict>0
 		model .*= (model .> restrict)
 	end
 
-	αprecision =sum(  model.^2 .* precision ,dims=2)[:]
-	α = sum(model .* precision .* val,dims=2)[:] ./ αprecision
+	αprecision =sum(  model.^2 .* prec ,dims=2)[:]
+	α = sum(model .* prec .* val,dims=2)[:] ./ αprecision
 	nanpix = .! isnan.(α)
 	if nonnegative
 		positive = nanpix .& (α .>= T(0))
@@ -144,14 +149,14 @@ end
 
 
 function gravi_compute_gain(	flats::Vector{<:AbstractArray{T,3}},
-	illuminated::BitMatrix,
-	goodpix::BitMatrix,
-	profiles::Dict{String,<:SpectrumModel}; 
-	restrict=0.01, 
-	thrsld=0.1,
-	nonnegative=false,  
-	filterblink=true,
-	unbiased=true) where {T}
+								illuminated::BitMatrix,
+								goodpix::BitMatrix,
+								profiles::Dict{String,<:SpectrumModel}; 
+								restrict=0.01, 
+								thrsld=0.1,
+								nonnegative=false,  
+								filterblink=true,
+								unbiased=true) where {T}
 	
 	
 	S2 = Vector{T}()
@@ -180,11 +185,11 @@ function gravi_compute_gain(	flats::Vector{<:AbstractArray{T,3}},
 				haskey(profiles,"$tel1$tel2-$chnl-C") || continue
 				profile =profiles["$tel1$tel2-$chnl-C"] 
 				bbox = profile.bbox[firstidx:lastidx,:]
-				data = view(flatdata,bbox.indices...,:)
-				gpblink = view(goodpix,bbox).*view(blink,bbox.indices...,:)
+				data = view(flatdata,bbox,:)
+				gpblink = view(goodpix,bbox).*view(blink,bbox,:)
 				
 				Nobs = sum(gpblink, dims=3)[:,:,1]
-				avg =  (sum(data.*gpblink, dims=3)[:,:,1] ./ Nobs) .+ bias
+				avg =  (sum(data.*gpblink, dims=3)[:,:,1] ./ Nobs)
 
 				
 				if restrict>0
