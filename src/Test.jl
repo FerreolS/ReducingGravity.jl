@@ -29,12 +29,12 @@ end
 
 goodpix .&= reduce(.&,goodpixflat)
 # if there are update of goodpix map
-ReducingGravity.flagbadpix!(darkflat,.!goodpix)
+flagbadpix!(darkflat,.!goodpix)
 Threads.@threads for i ∈ 1:4
-	ReducingGravity.flagbadpix!(flat[i],.!goodpix)
+	flagbadpix!(flat[i],.!goodpix)
 end
 
-profiles = gravi_compute_profile(flat .- [darkflat],bboxes,thrsld=0.5)
+profiles = gravi_compute_profile(flat .- [darkflat],bboxes,thrsld=0.1)
 #spctr = gravi_extract_profile_flats(flat .- [darkflat], profiles)
 #ron,gain = gravi_compute_gain(cflat,illuminated,goodpix,profiles)
 #lampspectrum = sum(values(spctr)).val ./ length(spctr)
@@ -52,7 +52,7 @@ fwave = FITS(first(filter(x -> (occursin(r"(WAVE,LAMP)", x.second.type) ), flist
 wave =read(fwave["IMAGING_DATA_SC"]);
 wave,goodpix  = gravi_create_weighteddata(wave,illuminated,goodpix)
 
-wav = gravi_extract_profile(wave - darkwave, profiles)
+#wav = gravi_extract_profile(wave - darkwave, profiles)
 profiles = gravi_spectral_calibration(wave,darkwave, profiles)
 
 
@@ -72,4 +72,8 @@ P2VMwd = Dict(P2VMwd)
 
 darkp2vm, gain, rov = gravi_compute_gain_from_p2vm(P2VMwd,profiles,goodpix)
 spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkp2vm,profiles)
-profiles,lamp = gravi_compute_transmissions(spctr,profiles)
+nspectra = length(spctr)
+meanspectrum = sum(values(spctr)) / nspectra
+lamp = meanspectrum.val
+#profiles,lamp = gravi_compute_transmissions(spctr,profiles,lamp)
+profiles, lamp = gravi_compute_lamp_transmissions(  spctr, profiles)

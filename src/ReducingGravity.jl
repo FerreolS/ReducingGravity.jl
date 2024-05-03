@@ -28,7 +28,7 @@ export 	gravi_data_create_bias_mask,
 		gravi_compute_gain_from_p2vm,
 		gravi_create_weighteddata,
 		gravi_spectral_calibration,
-		gravi_compute_transmissions,
+		gravi_compute_lamp_transmissions,
 		gravi_compute_gain,
 		WeightedData,
 		AbstractWeightedData,
@@ -240,35 +240,18 @@ function gravi_compute_profile(	flats::Vector{ConcreteWeightedData{T,N}},
 	return profile
 end
 
-function gravi_compute_transmissions(	spectra::Dict{String, AbstractWeightedData{T,N}},
-										profiles::Dict{String,<:SpectrumModel};
-										kwds...) where {T,N} 
-
-	
-	nspectra = length(spectra)
-	meanspectrum = sum(values(spectra)) / nspectra
-	rng= 1:length(meanspectrum)
-	knt = SVector{18,Float32}(1.0, 24.0, 35.0, 41.0, 46.0, 58.0, 69.0, 91.0, 114.0, 125.0, 136.0, 159.0, 181.0, 226.0, 271.0, 294.0, 316.0, 360.0)
-	#sp4 = Spline1D(1:360, meanspectrum.val; w=meanspectrum.precision, k=3, bc="zero",s=0.01)
-	B = BSplineBasis(BSplineOrder(3), knt)
-	ncoefs = length(B)
-	initcoefs =  [zeros(Float64,3)...,ones(Float64,ncoefs-6)...,zeros(Float64,3)...] 
-	#coefs = [ones(T,ncoefs) for i ∈ 1:nspectra]
-	lamp = meanspectrum.val
-
-	pr_array = Vector{Pair{String,<:SpectrumModel }}(undef,length(profiles))
-	Threads.@threads for (i,(key,profile)) ∈ collect(enumerate(profiles) )
-		tel1 = key[1] 
-		tel2 = key[2]
-		key1 = "$tel1-$key" 
-		key2 = "$tel2-$key" 
-		transmissions = [gravi_fit_transmission( spectra[key1],lamp,copy(initcoefs),B; kwds...)
-						gravi_fit_transmission( spectra[key2],lamp,copy(initcoefs),B; kwds...)]
-		@reset profile.transmissions = transmissions
-		pr_array[i] = key=>profile
+function gravi_compute_lamp_transmissions(	spectra::Dict{String, ConcreteWeightedData{T,N}},
+										profiles::Dict{String,SpectrumModel{A,B,C}};
+										loop=1,
+										nb_transmission_knts=20,
+										nb_lamp_knts=400,									
+										kwds...) where {T,N,A,B,C} 
+	profiles =gravi_init_transmissions(profiles::Dict{String,SpectrumModel{A,B,C}};	nb_transmission_knts=nb_transmission_knts,kwds...)
+	lamp = nothing
+	for i ∈ 1:loop
+		lamp = gravi_compute_lamp(spectra,profiles; nb_lamp_knts=nb_lamp_knts, kwds...)
+		profiles = gravi_compute_transmissions(spectra,profiles,lamp; kwds...)
 	end
-	profiles = Dict(pr_array)
-
 	return (profiles, lamp)
 
 end
