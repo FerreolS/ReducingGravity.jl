@@ -19,7 +19,11 @@ function gaussian_lines(rng;center=[0.0],σ=[1.0],amplitude=[1.0])
 	return amplitude' .* exp.(-1 ./ 2 .*((center' .- rng)./ σ').^2)
 end
 
-function gravi_spectral_calibration(wave::AbstractWeightedData{T,1}, profile::SpectrumModel{A}; lines=argon[:,1], guess=argon[:,2],λorder=3)  where {A,T}
+function gravi_spectral_calibration(      wave::AbstractWeightedData{T,1}, 
+                                          profile::SpectrumModel{A,B,Nothing}; 
+                                          lines=argon[:,1], 
+                                          guess=argon[:,2],
+                                          λorder=3)  where {A,B,T}
 
 
        P = hcat( ((lines .* 1e6).^n for n=0:λorder)...)
@@ -44,6 +48,7 @@ end
 
 
  function getamplitude(data::AbstractWeightedData,model)
+       #return max.(0, ldiv!(cholesky!(Symmetric(model' * ( data.precision.* model))),model'* (data.precision .* (data.val ))))
        return max.(0,pinv(model' * ( data.precision.* model))*model'* (data.precision .* (data.val )))
 end
 function ChainRulesCore.rrule( ::typeof(getamplitude),data::AbstractWeightedData,model)

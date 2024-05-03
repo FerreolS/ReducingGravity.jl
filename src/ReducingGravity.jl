@@ -274,16 +274,15 @@ function gravi_compute_transmissions(	spectra::Dict{String, AbstractWeightedData
 end
 
 
-
-
 function gravi_spectral_calibration(	wave::AbstractWeightedData{T, 2},
 										darkwave::AbstractWeightedData{T, 2}, 
-										profiles::Dict{String,<:SpectrumModel}; 
+										profiles::Dict{String,SpectrumModel{A,B, C}}; 
 										lines=argon[:,1],
 										guess=argon[:,2],
-										λorder=3) where T
+										λorder=3) where {A,B,C,T}
 
 	wav = gravi_extract_profile(wave - darkwave, profiles)
+	new_profiles = Dict{String,SpectrumModel{A,Vector{Float64}, C}}()
 	Threads.@threads for tel1 ∈ 1:4
 		   for tel2 ∈ 1:4
 				  tel1==tel2 && continue
@@ -291,11 +290,11 @@ function gravi_spectral_calibration(	wave::AbstractWeightedData{T, 2},
 						 chname = "$tel1$tel2-$chnl-C"
 						 haskey(profiles,chname) || continue
 						 updatedprofile = gravi_spectral_calibration(wav[chname] ,profiles[chname];lines=lines, guess=guess, λorder=λorder)
-						 push!(profiles,chname=>updatedprofile) 
+						 push!(new_profiles,chname=>updatedprofile) 
 				  end
 		   end
 	end
-	return profiles
+	return new_profiles
 end
 
 
