@@ -75,23 +75,39 @@ end
 
 
 
-struct SpectrumModel{A,B}
+struct SpectrumModel{A,B,C}
 	center::Vector{Float64}
 	σ::Vector{Float64}
-	λ::Vector{Float64}
-	transmissions::Vector{Transmission{B}}
+	λ::B
+	transmissions::Vector{Transmission{C}}
 	bbox::A
 end
 
-function (self::SpectrumModel)(p)
-	(;center,σ,λ) = self
+function ((;center,σ)::SpectrumModel{A,Nothing,B})(p) where {A,B}
 	cdeg = length(center)
 	cp =  p .^(0:(cdeg-1))'* center
 	σdeg = length(σ)
 	σp = p .^(0:(σdeg-1))'* σ
-	λdeg = length(λ)
- 	λp = p .^(0:(λdeg-1))'* λ
-	return (;center=cp[1],σ=σp[1],λ=λp[1])
+	#λdeg = length(λ)
+ 	#λp = p .^(0:(λdeg-1))'* λ
+	return (;center=cp[1],σ=σp[1])#,λ=λp[1])
+end
+
+function get_center(s::SpectrumModel{A,B,C}) where {A,B,C}
+	(;center,bbox) = s 
+ 	if C == Nothing
+		p = bbox.indices[1]
+	else
+		p = get_wavelength(s)
+	end
+	cdeg = length(center)	
+	return p .^(0:(cdeg-1))'* center
+end
+
+function get_width((;σ,bbox)::SpectrumModel)
+	p = bbox.indices[1]
+	σdeg = length(σ)	
+	return p .^(0:(σdeg-1))'* σ
 end
 
 function get_profile(s::SpectrumModel)
@@ -100,6 +116,36 @@ end
 
 function get_profile(s::SpectrumModel,bndbox)
 	ProfileModel(bndbox)(;s.center,s.σ)
+end
+
+get_wavelength(::SpectrumModel{A,Nothing,B},_...) where {A,B} = nothing
+
+function get_wavelength((;λ)::SpectrumModel,p)
+	λdeg = length(λ)
+ 	λp = p .^(0:(λdeg-1))'* λ
+	return λp[1]
+end
+
+function get_wavelength((;λ, bbox)::SpectrumModel)
+	p = bbox.indices[1]
+	λdeg = length(λ)	
+	return p .^(0:(λdeg-1))'* λ
+end
+
+function add_spectral_law(s::SpectrumModel{A,Nothing,B},λcoefs::C) where {A,B,C}
+	p = s.bbox.indices[1]
+	λdeg = length(λcoefs)
+ 	λ = p .^(0:(λdeg-1))'* λcoefs
+	cdeg = length(s.center)
+	P = (λ).^(0:(cdeg-1))'
+	cntr = get_center(s)
+	new_center = inv(P'*P)*P'* cntr
+
+	σdeg = length(s.σ)
+	P = (λ).^(0:(σdeg-1))'
+	sgm = get_width(s)
+	new_σ = inv(P'*P)*P'* sgm
+	SpectrumModel(new_center,new_σ,λcoefs,Vector{Transmission{Nothing}}(),s.bbox)
 end
 
 struct ProfileModel{A1,P} 

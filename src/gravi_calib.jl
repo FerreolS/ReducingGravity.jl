@@ -27,7 +27,7 @@ function fitprofile(data::AbstractWeightedData{T,2},bndbx::C; center_degree=4, �
 	xopt = Optim.minimizer(res)
 	θopt= unflatten(xopt)
 	(;center,σ) = θopt
-	center .*=  specmodel.preconditionner[1:σ_degree+1]
+	center .*=  specmodel.preconditionner[1:center_degree+1]
 	σ .*=  specmodel.preconditionner[1:σ_degree+1]
 	θopt = (;center=center,σ=σ)
 	return θopt
