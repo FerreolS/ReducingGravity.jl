@@ -265,13 +265,13 @@ function gravi_compute_transmission_and_lamp(	spectra::Dict{String, AbstractWeig
 
 end
 
-function gravi_extract_profile_flats_from_p2vm(	P2VM::Dict{String, AbstractWeightedData{T, 2}}, 
+function gravi_extract_profile_flats_from_p2vm(	P2VM::Dict{String, WeightedData{T, 2,A,B}}, 
 												dark::AbstractWeightedData{T,N},
 												profiles::Dict{String,<:SpectrumModel}; 
 												kwds...
-											) where {T,N}
+											) where {T,N,A,B}
 
-	spctr = Dict{String,AbstractWeightedData{Float64,1}}()
+	spctr = Dict{String,ConcreteWeightedData{Float64,1}}()
 	
 	for (baseline,data) ∈ P2VM
 		tel1 = baseline[5]
@@ -303,10 +303,10 @@ function gravi_extract_profile_flats_from_p2vm(	P2VM::Dict{String, AbstractWeigh
 end
 
 
-function gravi_compute_gain_from_p2vm(	P2VM::Dict{String, AbstractWeightedData{T, 2}}, 
+function gravi_compute_gain_from_p2vm(	P2VM::Dict{String, ConcreteWeightedData{T, 2}}, 
 										profiles::Dict{String,<:SpectrumModel},
 										goodpix::BitMatrix; 
-										restrict=0.01, 
+										restrict=0.0, 
 										kwds...
 											) where {T}
 											

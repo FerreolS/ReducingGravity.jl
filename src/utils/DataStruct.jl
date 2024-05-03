@@ -7,6 +7,7 @@ struct WeightedData{T,N,A<:AbstractArray{T,N},B<:AbstractArray{T,N}}# <: Abstrac
     end
 end
 AbstractWeightedData{T,N} = WeightedData{T,N,A,B} where {T,N,A,B}
+ConcreteWeightedData{T,N} = WeightedData{T,N,Array{T,N},Array{T,N}} where {T,N}
 
 Base.size(A::WeightedData) = size(A.val)
 Base.size(A::WeightedData,n::Int) = size(A.val,n)

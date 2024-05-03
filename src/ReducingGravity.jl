@@ -32,7 +32,10 @@ export 	gravi_data_create_bias_mask,
 		gravi_compute_gain,
 		WeightedData,
 		AbstractWeightedData,
-		likelihood
+		ConcreteWeightedData,
+		likelihood,
+		flagbadpix!,
+		listfitsfiles
 
 
 
@@ -214,13 +217,13 @@ function gravi_create_weighteddata(	rawdata::AbstractArray{T,3},
 	return weighteddata
 end
 
-function gravi_compute_profile(	flats::Vector{<:AbstractWeightedData{T,N}},
+function gravi_compute_profile(	flats::Vector{ConcreteWeightedData{T,N}},
 								bboxes::Dict{String,C}; 
 								center_degree=4, 
 								σ_degree=4, 
 								thrsld=0.1) where {T,N,C}
-	#profile = Dict{String,SpectrumModel{C,Nothing}}()
-	profile = Dict{String,SpectrumModel}()
+	profile = Dict{String,SpectrumModel{C,Nothing,Nothing}}()
+	#profile = Dict{String,SpectrumModel}()
 	Threads.@threads for tel1 ∈ 1:4
 		for tel2 ∈ 1:4
 			tel1==tel2 && continue
@@ -229,7 +232,7 @@ function gravi_compute_profile(	flats::Vector{<:AbstractWeightedData{T,N}},
 				haskey(bboxes,"$tel1$tel2-$chnl-C") || continue
 				bndbx =bboxes["$tel1$tel2-$chnl-C"] 
  				θ = fitprofile(flatsum,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld )
-				p = SpectrumModel(θ...,Vector{Float64}(),Vector{Transmission{Nothing}}(),bndbx)
+				p = SpectrumModel(θ...,nothing,Vector{Transmission{Nothing}}(),bndbx)
 				push!(profile,"$tel1$tel2-$chnl-C"=>p) 
 			end
 		end

@@ -59,7 +59,7 @@ profiles = gravi_spectral_calibration(wave,darkwave, profiles)
 
 len_p2vm = length(filter(x -> occursin("P2VM", x.second.type), flist))
 P2VM = Vector{Pair{String, Array{Float32, 3}}}(undef,len_p2vm)
-P2VMwd = Vector{Pair{String,AbstractWeightedData{Float32,2}}}(undef,len_p2vm)
+P2VMwd = Vector{Pair{String,ConcreteWeightedData{Float32,2}}}(undef,len_p2vm)
 Threads.@threads for (i,pv2mfile) ∈ collect(enumerate(values(filter(x -> occursin("P2VM", x.second.type), flist))))
 	rawdata =read(FITS(pv2mfile.path)["IMAGING_DATA_SC"])
 	P2VM[i] = pv2mfile.type =>rawdata
