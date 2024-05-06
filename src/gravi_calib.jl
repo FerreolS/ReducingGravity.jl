@@ -299,6 +299,7 @@ end
 function gravi_compute_lamp(spectra::Dict{String, D}, 
 							profiles::Dict{String,SpectrumModel{A,B,C}};
 							nb_lamp_knts=360,
+							init_lamp = nothing,
 							kwds...) where {T,A,B,C,D<:AbstractWeightedData{T, 1}} 
 	
 	data_trans = Vector{@NamedTuple{spectrum::D,transmission::Transmission{C},wavelength::B}}(undef,length(spectra))	
@@ -311,16 +312,21 @@ function gravi_compute_lamp(spectra::Dict{String, D},
 		data_trans[2*i-1] = (;spectrum = spectra[key1], transmission = profile.transmissions[1], wavelength = get_wavelength(profile))
 		data_trans[2*i] =  (;spectrum = spectra[key2], transmission = profile.transmissions[2], wavelength = get_wavelength(profile))
 	end
+	local initcoefs, BSp 
 
-	#return data_trans
-	λmin = minimum([get_wavelength(p,1) for p ∈ values(profiles)])
-	λmax = maximum([get_wavelength(p,360) for p ∈ values(profiles)])
-	knt = LinRange(λmin,λmax,nb_lamp_knts)
+	if isnothing(init_lamp)
+		λmin = minimum([get_wavelength(p,1) for p ∈ values(profiles)])
+		λmax = maximum([get_wavelength(p,360) for p ∈ values(profiles)])
+		knt = LinRange(λmin,λmax,nb_lamp_knts)
 	#@MVector [i for i ∈ LinRange(λmin,λmax,360)]
 	#knt = @SVector [Float64(i) for i ∈ LinRange(λmin,λmax,360)]
-	BSp = BSplineBasis(BSplineOrder(3), knt)
-	ncoefs = length(BSp)
-	initcoefs =  [zeros(Float64,3)...,ones(Float64,ncoefs-6)...,zeros(Float64,3)...] 
+		BSp = BSplineBasis(BSplineOrder(3), knt)
+		ncoefs = length(BSp)
+		initcoefs =  [zeros(Float64,3)...,ones(Float64,ncoefs-6)...,zeros(Float64,3)...] 
+	else
+		BSp =basis(init_lamp)
+		initcoefs = coefficients(init_lamp); 
+	end
 	coefs = gravi_fit_lamp(  data_trans,copy(initcoefs),BSp; kwds...)
 	return Spline(BSp,coefs)
 end

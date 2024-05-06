@@ -242,14 +242,17 @@ end
 
 function gravi_compute_lamp_transmissions(	spectra::Dict{String, ConcreteWeightedData{T,N}},
 										profiles::Dict{String,SpectrumModel{A,B,C}};
+										lamp = nothing,
 										loop=1,
 										nb_transmission_knts=20,
 										nb_lamp_knts=400,									
 										kwds...) where {T,N,A,B,C} 
-	profiles =gravi_init_transmissions(profiles::Dict{String,SpectrumModel{A,B,C}};	nb_transmission_knts=nb_transmission_knts,kwds...)
-	lamp = nothing
+	if C==Nothing
+		profiles =gravi_init_transmissions(profiles::Dict{String,SpectrumModel{A,B,C}};	nb_transmission_knts=nb_transmission_knts,kwds...)
+	end
+	
 	for i ∈ 1:loop
-		lamp = gravi_compute_lamp(spectra,profiles; nb_lamp_knts=nb_lamp_knts, kwds...)
+		lamp = gravi_compute_lamp(spectra,profiles; init_lamp=lamp, nb_lamp_knts=nb_lamp_knts, kwds...)
 		profiles = gravi_compute_transmissions(spectra,profiles,lamp; kwds...)
 	end
 	return (profiles, lamp)
