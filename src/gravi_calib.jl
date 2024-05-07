@@ -309,13 +309,10 @@ function gravi_compute_lamp(spectra::Dict{String, D},
 	
 	data_trans = Vector{@NamedTuple{spectrum::D,transmission::Transmission{C},wavelength::B}}(undef,length(spectra))	
 	#wavelength = Vector{Vector{Float64}}(undef,length(spectra))	
-	for (i,(key,profile)) ∈ enumerate(profiles)		
-		tel1 = key[1] 
-		tel2 = key[2]
-		key1 = "$tel1-$key" 
-		key2 = "$tel2-$key" 
-		data_trans[2*i-1] = (;spectrum = spectra[key1], transmission = profile.transmissions[1], wavelength = get_wavelength(profile))
-		data_trans[2*i] =  (;spectrum = spectra[key2], transmission = profile.transmissions[2], wavelength = get_wavelength(profile))
+	for (i,(key,spectrum)) ∈ enumerate(spectra)		
+		profile = profiles[ key[3:end]]
+		transmission = key[1] == key[3] ? profile.transmissions[1] : profile.transmissions[2]
+		data_trans[i] = (;spectrum = spectrum, transmission = transmission, wavelength = get_wavelength(profile))
 	end
 	local initcoefs, BSp 
 
