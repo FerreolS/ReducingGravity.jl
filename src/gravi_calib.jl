@@ -282,14 +282,14 @@ function gravi_init_transmissions(profiles::Dict{String,SpectrumModel{A,B,C}};
 	return profiles
 end
 
-function gravi_fit_transmission(	spectrum::AbstractWeightedData{T, 1},
+function gravi_fit_transmission(	spectrum::A,
 									lampspectrum::Vector{Float64},
 									initcoefs::Vector{Float64},
 									B,
 									rng;
 									verb=0,
 									maxeval=50, 
-									kwd...) where T 
+									kwd...) where {T, A<:AbstractWeightedData{T, 1}} 
 	function loss(rng,spectrum,B,lampspectrum,coefs) 
 		S = Spline(B,coefs)
 		return likelihood(spectrum,map(S,rng) .* lampspectrum)
@@ -393,6 +393,8 @@ function gravi_compute_gain_from_p2vm(	P2VM::Dict{String, ConcreteWeightedData{T
 										profiles::Dict{String,<:SpectrumModel},
 										goodpix::BitMatrix; 
 										restrict=0.0, 
+										substract_dark=true,
+										fix_gain=true,
 										kwds...
 											) where {T}
 											
@@ -439,24 +441,39 @@ function gravi_compute_gain_from_p2vm(	P2VM::Dict{String, ConcreteWeightedData{T
 		
 	end
 	usable = ill .& goodpix  .& reduce(.&,prec .!=0, dims=3,init=true)[:,:,1]
-	gain, rov = build_ron_and_gain(usable,avg,prec)
+	gain, rov = build_ron_and_gain(usable,avg,prec; substract_dark=substract_dark,fix_gain=fix_gain)
 	darkp2vm = WeightedData(avg[:,:,5],prec[:,:,5])
 	return darkp2vm,gain, rov
 
 end
 
 
-function build_ron_and_gain(usable::BitMatrix,avg::Array{T,3},prec::Array{T,3}) where T
+function build_ron_and_gain(usable::BitMatrix,
+							avg::Array{T,3},
+							prec::Array{T,3}; 
+							substract_dark=true,
+							fix_gain=true) where T
 	sz = size(usable)
 	gain = zeros(T,sz[1])
 	rov = zeros(T,sz[1])
 	for i ∈ axes(usable,1)
 		u = findall(usable[i,:] )
+		if substract_dark
 		a = (view(avg[i,:,:],u,:) .- view(avg[i,:,:],u,5))[:]
 		v = (1 ./ view(prec[i,:,:],u,:) .+ 1 ./ view(prec[i,:,5],u))[:]
+		else 
+			a = (view(avg[i,:,:],u,:))[:]
+			v = (1 ./ view(prec[i,:,:],u,:))[:]
+		end
 		P = hcat(ones(length(a)), a)	
 		rov[i], gain[i] = inv(P'*P) * P' * v
 		#rov[i], gain[i] = ldiv!(cholesky!(Symmetric(P'*P)),P'*v )
+	end
+
+	mgain = median(gain)
+	sgain = mad(gain)
+	if fix_gain
+		gain[.!((-3*sgain) .< (gain .- mgain) .< (3*sgain))] .= mgain
 	end
 	return 1 ./ gain, rov
 end
