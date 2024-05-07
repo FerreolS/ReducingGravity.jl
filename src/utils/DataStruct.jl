@@ -27,9 +27,10 @@ function Base.view(A::WeightedData{T,N}, I...) where {T,N}
 	WeightedData(view(A.val,I...),view(A.precision,I...))
 end
 
-Base.:+(A::AbstractWeightedData{T,N}, B::AbstractWeightedData{T,N}) where {T,N} = WeightedData(A.val .+ B.val, 1 ./ ( 1 ./ A.precision .+ 1 ./ B.precision))
-Base.:-(A::AbstractWeightedData{T,N}, B::AbstractWeightedData{T,N}) where {T,N} = WeightedData(A.val .- B.val, 1 ./ ( 1 ./ A.precision .+ 1 ./ B.precision))
-Base.:-(A::AbstractWeightedData{T,N}, B::AbstractArray{T,N}) where {T,N} = WeightedData(A.val .- B, A.precision )
+Base.:+(A::AbstractWeightedData, B::AbstractWeightedData)  = WeightedData(A.val .+ B.val, 1 ./ ( 1 ./ A.precision .+ 1 ./ B.precision))
+Base.:+(A::AbstractWeightedData, B)  = WeightedData(A.val .+ B, A.precision )
+Base.:-(A::AbstractWeightedData, B::AbstractWeightedData)  = WeightedData(A.val .- B.val, 1 ./ ( 1 ./ A.precision .+ 1 ./ B.precision))
+Base.:-(A::AbstractWeightedData, B)  = WeightedData(A.val .- B, A.precision )
 Base.:/(A::AbstractWeightedData, B)  = WeightedData(A.val ./ B, B.^2 .* A.precision)
 Base.:*( B, A::AbstractWeightedData)  = WeightedData(A.val .* B,  A.precision ./ B.^2 )
 Base.:*(A::AbstractWeightedData, B::Number)  = B * A
