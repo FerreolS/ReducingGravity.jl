@@ -201,15 +201,20 @@ end
 function gravi_create_weighteddata(	rawdata::AbstractArray{T,3},
 									illuminated::BitMatrix,
 									goodpix::BitMatrix, 
-									ron,
+									rov,
 									gain;
+									dark = T(0),
+									bndbox = CartesianIndices(goodpix),
 									kwd...) where T
 	
 
 	bias,data = gravi_data_detector_cleanup(rawdata,illuminated)
-
+	data = view(data .- dark,bndbox,:)
+	rov = view(rov,bndbox.indices[1])
+	gain = view(gain,bndbox.indices[1])
+	goodpix = view(goodpix,bndbox)
 	avg = data.*goodpix
-	wgt = goodpix ./ (T.(ron).^2 .+ T.(gain) .\ max.(0,avg .+ T.(bias)) )
+	wgt = goodpix ./ (rov .+ gain .\ max.(0,avg .+ bias) )
 
 	#avg[.!(goodpix)] .= zero(T)
 	#wgt[.!(goodpix)] .= zero(T)
