@@ -40,29 +40,34 @@ function gravi_extract_profile(	data::AbstractWeightedData{T,N},
 								nonnegative=false, 
 								robust=false) where {T,N}
 	bbox = profile.bbox
-	(;val, precision) = view(data,bbox)
-
+	if  ndims(bbox)<N
+		(;val, precision) = view(data,bbox,:)
+	else
+		(;val, precision) = view(data,bbox)
+	end
 	model =  get_profile(profile)
 	if restrict>0
 		model .*= (model .> restrict)
 	end
 
-	αprecision =sum(  model.^2 .* precision ,dims=2)[:]
-	α = sum(model .* precision .* val,dims=2)[:] ./ αprecision
+	αprecision = dropdims(sum(  model.^2 .* precision ,dims=2),dims=2)
+	α = dropdims(sum(model .* precision .* val,dims=2),dims=2) ./ αprecision
+
 	nanpix = .! isnan.(α)
 	if nonnegative
 		positive = nanpix .& (α .>= T(0))
 	else
 		positive = nanpix
 	end
+
 	wd = WeightedData(positive .* α, positive .* αprecision)
 
 	if robust # Talwar hard descender
 		res = sqrt.(precision) .* (wd.val  .* model .- val) 
 		
 		good = (T(-2.795) .< res .<  T(2.795))
-		αprecision =sum( good .* model.^2 .* precision ,dims=2)[:]
-		α = sum(good .* model .* precision .* val,dims=2)[:] ./ αprecision
+		αprecision =dropdims(sum( good .* model.^2 .* precision ,dims=2),dims=2)
+		α = dropdims(sum(good .* model .* precision .* val,dims=2),dims=2) ./ αprecision
 		
 		nanpix = .! isnan.(α)
 		if nonnegative
@@ -78,7 +83,7 @@ end
 function gravi_extract_profile(	data::AbstractWeightedData{T,N},	
 								profile::Dict{String,<:SpectrumModel}; 
 								kwds...) where {T,N}
-	profiles = Dict{String,AbstractWeightedData{Float64,1}}()
+	profiles = Dict{String,ConcreteWeightedData{Float64,1}}()
 	for (key,val) ∈ profile
 		push!(profiles,key=>gravi_extract_profile(data ,val; kwds...))
 	end
