@@ -253,7 +253,9 @@ function gravi_compute_lamp_transmissions(	spectra::Dict{String, ConcreteWeighte
 										nb_lamp_knts=400,									
 										kwds...) where {T,N,A,B,C} 
 	if C==Nothing
-		profiles =gravi_init_transmissions(profiles::Dict{String,SpectrumModel{A,B,C}};	nb_transmission_knts=nb_transmission_knts,kwds...)
+		profiles =gravi_init_transmissions(profiles;	nb_transmission_knts=nb_transmission_knts,kwds...)
+	elseif nb_transmission_knts != (length(first(values(profiles)).transmissions[1].SplineBasis)-1) 
+		profiles =gravi_init_transmissions(profiles;	nb_transmission_knts=nb_transmission_knts,kwds...)
 	end
 	
 	for i ∈ 1:loop

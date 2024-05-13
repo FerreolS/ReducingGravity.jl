@@ -231,25 +231,28 @@ function gravi_compute_transmissions(	spectra::Dict{String, ConcreteWeightedData
 	#nspectra = length(spectra)
 	#meanspectrum = sum(values(spectra)) / nspectra
 	#rng= 1:length(meanspectrum)
-	λmin = minimum([get_wavelength(p,1) for p ∈ values(profiles)])
-	λmax = maximum([get_wavelength(p,360) for p ∈ values(profiles)])
+	#λmin = minimum([get_wavelength(p,1) for p ∈ values(profiles)])
+	#λmax = maximum([get_wavelength(p,360) for p ∈ values(profiles)])
 	#knt = SVector{18,Float32}(1.0, 24.0, 35.0, 41.0, 46.0, 58.0, 69.0, 91.0, 114.0, 125.0, 136.0, 159.0, 181.0, 226.0, 271.0, 294.0, 316.0, 360.0)
 	#sp4 = Spline1D(1:360, meanspectrum.val; w=meanspectrum.precision, k=3, bc="zero",s=0.01)
-	knt =  LinRange(λmin,λmax,20)
-	BSp = BSplineBasis(BSplineOrder(3), knt)
-	ncoefs = length(BSp)
-	initcoefs =  [zeros(Float64,3)...,ones(Float64,ncoefs-6)...,zeros(Float64,3)...] 
+	#knt =  LinRange(λmin,λmax,20)
+	#BSp = BSplineBasis(BSplineOrder(3), knt)
+	#ncoefs = length(BSp)
+	#initcoefs =  [zeros(Float64,3)...,ones(Float64,ncoefs-6)...,zeros(Float64,3)...] 
 	#coefs = [ones(T,ncoefs) for i ∈ 1:nspectra]
 	#lamp = meanspectrum.val
-
-	pr_array = Vector{Pair{String,SpectrumModel{A,B,typeof(BSp)}}}(undef,length(profiles))
+	pr_array = Vector{Pair{String,SpectrumModel{A,B,C}}}(undef,length(profiles))
 	Threads.@threads for (i,(key,profile)) ∈ collect(enumerate(profiles) )
 		tel1 = key[1] 
 		tel2 = key[2]
 		key1 = "$tel1-$key" 
 		key2 = "$tel2-$key" 
-		transmissions = [gravi_fit_transmission( spectra[key1],lamp.(get_wavelength(profile)),copy(initcoefs),BSp,get_wavelength(profile); kwds...)
-						gravi_fit_transmission( spectra[key2],lamp.(get_wavelength(profile)),copy(initcoefs),BSp, get_wavelength(profile); kwds...)]
+		initcoefs1 = profile.transmissions[1].coefs
+		BSp1 = profile.transmissions[1].SplineBasis
+		initcoefs2 = profile.transmissions[2].coefs
+		BSp2 = profile.transmissions[2].SplineBasis
+		transmissions = [gravi_fit_transmission( spectra[key1],lamp.(get_wavelength(profile)),copy(initcoefs1),BSp1,get_wavelength(profile); kwds...)
+						gravi_fit_transmission( spectra[key2],lamp.(get_wavelength(profile)),copy(initcoefs2),BSp2, get_wavelength(profile); kwds...)]
 		@reset profile.transmissions = transmissions
 		pr_array[i] = key=>profile
 	end
