@@ -33,6 +33,51 @@ function fitprofile(data::AbstractWeightedData{T,2},bndbx::C; center_degree=4, �
 	return θopt
 end
 
+function gravi_extract_model(	data::AbstractWeightedData{T,N},
+								profile::SpectrumModel; 
+								restrict=0.01, 
+								nonnegative=false,
+								robust=false
+								) where {T,N}
+	bbox = profile.bbox
+	if  ndims(bbox)<N
+		(;val, precision) = view(data,bbox,:)
+	else
+		(;val, precision) = view(data,bbox)
+	end
+	model =  get_profile(profile)
+	if restrict>0
+		model .*= (model .> restrict)
+	end
+
+	αprecision = dropdims(sum(  model.^2 .* precision ,dims=2),dims=2)
+	α = dropdims(sum(model .* precision .* val,dims=2),dims=2) ./ αprecision
+
+	nanpix = .! isnan.(α)
+	if nonnegative
+		positive = nanpix .& (α .>= T(0))
+	else
+		positive = nanpix
+	end
+
+	if robust # Talwar hard descender
+		res = sqrt.(precision) .* (positive .* α  .* model .- val) 
+		
+		good = (T(-2.795) .< res .<  T(2.795))
+		αprecision =dropdims(sum( good .* model.^2 .* precision ,dims=2),dims=2)
+		α = dropdims(sum(good .* model .* precision .* val,dims=2),dims=2) ./ αprecision
+		
+		nanpix = .! isnan.(α).*good
+		if nonnegative
+			positive = nanpix .& (α .>= T(0))
+		else
+			positive = nanpix
+		end
+	end
+
+	return positive .* α .* model
+end
+
 
 function gravi_extract_profile(	data::AbstractWeightedData{T,N},
 								profile::SpectrumModel; 
@@ -119,7 +164,7 @@ function gravi_extract_profile(	data::AbstractArray{T,N},
 	return profiles
 end
 
-function gravi_extract_profile(	data::AbstractArray{T,N},
+#= function gravi_extract_profile(	data::AbstractArray{T,N},
 								precision::Union{BitMatrix,AbstractArray{T,N}},
 								profile::SpectrumModel; 
 								restrict=0.01, 
@@ -150,7 +195,7 @@ function gravi_extract_profile(	data::AbstractArray{T,N},
 
 end
 
-
+ =#
 
 
 function gravi_compute_gain(	flats::Vector{<:AbstractArray{T,3}},
@@ -225,6 +270,7 @@ end
 function gravi_compute_transmissions(	spectra::Dict{String, ConcreteWeightedData{T,N}},
 										profiles::Dict{String,SpectrumModel{A,B,C}},
 										lamp;
+										thrs=0.01,
 										kwds...) where {T,N,A,B,C} 
 
 	
@@ -283,7 +329,7 @@ function gravi_compute_transmissions(	spectra::Dict{String, ConcreteWeightedData
 end
 
 function gravi_init_transmissions(profiles::Dict{String,SpectrumModel{A,B,C}};
-									nb_transmission_knts=20
+									nb_transmission_knts=20,kwds...
 									) where {A,B,C} 
 									
 	λmin = minimum([get_wavelength(p,1) for p ∈ values(profiles)])
@@ -330,7 +376,8 @@ function gravi_compute_lamp(spectra::Dict{String, D},
 							init_lamp = nothing,
 							kwds...) where {T,A,B,C,D<:AbstractWeightedData{T, 1}} 
 	
-	data_trans = Vector{@NamedTuple{spectrum::D,transmission::Transmission{C},wavelength::B}}(undef,length(spectra))	
+	data_trans = Vector{@NamedTuple{spectrum::WeightedData{Float64,1,SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false},SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false}},
+									transmission::Transmission{C},wavelength::B}}(undef,length(spectra))	
 	#wavelength = Vector{Vector{Float64}}(undef,length(spectra))	
 	for (i,(key,spectrum)) ∈ enumerate(spectra)		
 		profile = profiles[ key[3:end]]
@@ -352,7 +399,7 @@ function gravi_compute_lamp(spectra::Dict{String, D},
 		initcoefs =  [zeros(Float64,3)...,ones(Float64,ncoefs-6)...,zeros(Float64,3)...] 
 	else
 		BSp =basis(init_lamp)
-		initcoefs = coefficients(init_lamp); 
+		initcoefs = coefficients(init_lamp)
 	end
 	coefs = gravi_fit_lamp(  data_trans,copy(initcoefs),BSp; kwds...)
 	return Spline(BSp,coefs)

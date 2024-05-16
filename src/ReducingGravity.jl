@@ -272,9 +272,10 @@ function gravi_spectral_calibration(	wave::AbstractWeightedData{T, 2},
 										profiles::Dict{String,SpectrumModel{A,B, C}}; 
 										lines=argon[:,1],
 										guess=argon[:,2],
-										λorder=3) where {A,B,C,T}
+										λorder=3,
+										kwds...) where {A,B,C,T}
 
-	wav = gravi_extract_profile(wave - darkwave, profiles)
+	wav = gravi_extract_profile(wave - darkwave, profiles;kwds...)
 	new_profiles = Dict{String,SpectrumModel{A,Vector{Float64}, C}}()
 	Threads.@threads for tel1 ∈ 1:4
 		   for tel2 ∈ 1:4
