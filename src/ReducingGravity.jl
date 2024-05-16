@@ -237,7 +237,7 @@ function gravi_compute_profile(	flats::Vector{ConcreteWeightedData{T,N}},
 				haskey(bboxes,"$tel1$tel2-$chnl-C") || continue
 				bndbx =bboxes["$tel1$tel2-$chnl-C"] 
  				θ = fitprofile(flatsum,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld )
-				p = SpectrumModel(θ...,nothing,Vector{Transmission{Nothing}}(),bndbx)
+				p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{Transmission{Nothing}}(),ones(Float64,size(bndbx,1)),bndbx)
 				push!(profile,"$tel1$tel2-$chnl-C"=>p) 
 			end
 		end

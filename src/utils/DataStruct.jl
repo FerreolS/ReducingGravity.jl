@@ -102,6 +102,7 @@ struct SpectrumModel{A,B,C}
 	λ::B
 	λbnd::Vector{Float64}
 	transmissions::Vector{Transmission{C}}
+	Bflat::Vector{Float64}
 	bbox::A
 end
 

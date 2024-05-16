@@ -77,7 +77,7 @@ function gravi_extract_profile(	data::AbstractWeightedData{T,N},
 		end
 		wd = WeightedData(positive .* α, positive .* αprecision)
 	end
-	return wd
+	return wd / profile.flat
 end
 
 function gravi_extract_profile(	data::AbstractWeightedData{T,N},	
@@ -269,6 +269,11 @@ function gravi_compute_transmissions(	spectra::Dict{String, ConcreteWeightedData
 		transmissions = [gravi_fit_transmission( view(spectra[key1],good),lmp,copy(initcoefs1),BSp1,wvgood; kwds...)
 						gravi_fit_transmission( view(spectra[key2], good),lmp,copy(initcoefs2),BSp2, wvgood; kwds...)]
 		@reset profile.transmissions = transmissions
+
+		flat = ones(Float64,length(spectra[key1]))
+		flat[good] .= ((view(spectra[key1],good) / (profile.transmissions[1].(wvgood).* lmp) + view(spectra[key2],good) / (profile.transmissions[2].(wvgood).* lmp))/2).val
+		
+		@reset profile.flat = flat
 		pr_array[i] = key=>profile
 	end
 	profiles = Dict(pr_array)
