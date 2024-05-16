@@ -11,7 +11,8 @@ fdark = FITS(first(filter(x -> (occursin(r"(DARK)", x.second.type) && x.second.�
 (illuminated,bboxes) = gravi_data_create_bias_mask(fdark);
 
 darkflat = read(fdark["IMAGING_DATA_SC"]);
-goodpix = gravi_compute_badpix(darkflat,illuminated)
+#goodpix = gravi_compute_badpix(darkflat,illuminated)
+goodpix = gravi_compute_badpix(darkflat,illuminated,spatialkernel=(11,1))
 illuminated = illuminated .|| .!goodpix
 
 
@@ -53,7 +54,7 @@ wave =read(fwave["IMAGING_DATA_SC"]);
 wave,goodpix  = gravi_create_weighteddata(wave,illuminated,goodpix)
 
 #wav = gravi_extract_profile(wave - darkwave, profiles)
-profiles = gravi_spectral_calibration(wave,darkwave, profiles)
+profiles = gravi_spectral_calibration(wave,darkwave, profiles; nonnegative=true, robust=true)
 
 
 
@@ -71,9 +72,22 @@ P2VM = Dict(P2VM)
 P2VMwd = Dict(P2VMwd)
 
 darkp2vm, gain, rov = gravi_compute_gain_from_p2vm(P2VMwd,profiles,goodpix)
-spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkp2vm,profiles)
+spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkp2vm,profiles; nonnegative=true, robust=true)
 nspectra = length(spctr)
 meanspectrum = sum(values(spctr)) / nspectra
 lamp = meanspectrum.val
 #profiles,lamp = gravi_compute_transmissions(spctr,profiles,lamp)
 profiles, lamp = gravi_compute_lamp_transmissions(  spctr, profiles)
+
+wd = gravi_create_weighteddata(P2VM["P2VM12"], illuminated,goodpix,rov, gain)
+A = ReducingGravity.gravi_extract_channel(wd,profiles["12-A-C"],lamp)
+B = ReducingGravity.gravi_extract_channel(wd,profiles["12-B-C"],lamp)
+C = ReducingGravity.gravi_extract_channel(wd,profiles["12-C-C"],lamp)
+D = ReducingGravity.gravi_extract_channel(wd,profiles["12-D-C"],lamp)
+ϕ = ReducingGravity.gravi_initial_input_phase(A,B,C,D)
+phasors= ReducingGravity.gravi_build_ABCD_phasors(ϕ,A,B,C,D);
+phase = ReducingGravity.estimate_phase(phasors,A,B,C,D);
+rho = sqrt.(phase[:,:,1].^2 .+ phase[:,:,2] .^2)
+phase .*= 1 ./ rho
+phasors= ReducingGravity.gravi_build_ABCD_phasors(phase,A,B,C,D);
+phase = ReducingGravity.estimate_phase(phasors,A,B,C,D);
