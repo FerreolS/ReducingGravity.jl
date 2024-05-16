@@ -66,6 +66,26 @@ function ChainRulesCore.rrule( ::typeof(scaledlikelihood),A::D,model::AbstractAr
     return  sum(r.*rp) / 2, likelihood_pullback
 end
 
+
+
+
+function getamplitude(data::AbstractWeightedData,model)
+	#return max.(0, ldiv!(cholesky!(Symmetric(model' * ( data.precision.* model))),model'* (data.precision .* (data.val ))))
+	return max.(0,pinv(model' * ( data.precision.* model))*model'* (data.precision .* (data.val )))
+end
+function ChainRulesCore.rrule( ::typeof(getamplitude),data::AbstractWeightedData,model)
+	∂Y(Δy) = (NoTangent(),NoTangent(), ZeroTangent())
+	return getamplitude(data, model), ∂Y
+end
+
+function ChainRulesCore.frule( ::typeof(getamplitude),data::AbstractWeightedData,model)
+	∂Y(Δy) = (NoTangent(),NoTangent(), ZeroTangent())
+	return getamplitude(data, model), ∂Y
+end
+
+
+
+
 struct Transmission{B}
 	coefs::Vector{Float64}
 	SplineBasis::B
