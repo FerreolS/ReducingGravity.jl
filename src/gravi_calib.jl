@@ -251,8 +251,23 @@ function gravi_compute_transmissions(	spectra::Dict{String, ConcreteWeightedData
 		BSp1 = profile.transmissions[1].SplineBasis
 		initcoefs2 = profile.transmissions[2].coefs
 		BSp2 = profile.transmissions[2].SplineBasis
-		transmissions = [gravi_fit_transmission( spectra[key1],lamp.(get_wavelength(profile)),copy(initcoefs1),BSp1,get_wavelength(profile); kwds...)
-						gravi_fit_transmission( spectra[key2],lamp.(get_wavelength(profile)),copy(initcoefs2),BSp2, get_wavelength(profile); kwds...)]
+
+		wvlngth = get_wavelength(profile)
+
+		thrs1 = median(spectra[key1].val) .* thrs
+		thrs2 = median(spectra[key2].val) .* thrs
+
+
+		λmin = wvlngth[min(findfirst(spectra[key1].val .> thrs1),findfirst(spectra[key2].val .> thrs2))]
+		λmax = wvlngth[max(findlast(spectra[key1].val .> thrs1),findlast(spectra[key2].val .> thrs2))]
+		@reset profile.λbnd = [λmin, λmax]
+		wvlngth = get_wavelength(profile)
+		good = .!isnan.(wvlngth)
+		wvgood = wvlngth[good]
+		lmp = lamp.(wvgood)
+
+		transmissions = [gravi_fit_transmission( view(spectra[key1],good),lmp,copy(initcoefs1),BSp1,wvgood; kwds...)
+						gravi_fit_transmission( view(spectra[key2], good),lmp,copy(initcoefs2),BSp2, wvgood; kwds...)]
 		@reset profile.transmissions = transmissions
 		pr_array[i] = key=>profile
 	end
@@ -315,7 +330,9 @@ function gravi_compute_lamp(spectra::Dict{String, D},
 	for (i,(key,spectrum)) ∈ enumerate(spectra)		
 		profile = profiles[ key[3:end]]
 		transmission = key[1] == key[3] ? profile.transmissions[1] : profile.transmissions[2]
-		data_trans[i] = (;spectrum = spectrum, transmission = transmission, wavelength = get_wavelength(profile))
+		wvlngth =get_wavelength(profile)
+		good = .!isnan.(wvlngth)
+		data_trans[i] = (;spectrum = view(spectrum,good), transmission = transmission, wavelength = wvlngth[good])
 	end
 	local initcoefs, BSp 
 
