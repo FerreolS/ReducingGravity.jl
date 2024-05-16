@@ -133,13 +133,6 @@ function get_width((;σ,bbox)::SpectrumModel)
 	return p .^(0:(σdeg-1))'* σ
 end
 
-function get_profile(s::SpectrumModel)
-	ProfileModel(s.bbox)(;s.center,s.σ)
-end
-
-function get_profile(s::SpectrumModel,bndbox)
-	ProfileModel(bndbox)(;s.center,s.σ)
-end
 
 get_wavelength(::SpectrumModel{A,Nothing,B},_...) where {A,B} = nothing
 
@@ -195,4 +188,29 @@ function (self::ProfileModel{A1,P})(;center=[0.0],σ=[1.0],amplitude=[1.0]) wher
 	return ampy .* exp.(-1 ./ 2 .*((cy .- ay')./ sy).^2)
 end
 
-(self::ProfileModel)((;center,σ)::SpectrumModel) = self(;center=center, σ=σ)
+(self::ProfileModel)((;center,σ)::SpectrumModel{A,Nothing,B}) where {A,B} = self(;center=center, σ=σ)
+
+function get_profile(profile::SpectrumModel) 
+	(;center,σ) = profile
+	ncenter = length(center)
+	nσ = length(σ)
+	ay = profile.bbox.indices[2]
+
+	degmax = max(ncenter,nσ)
+
+    λ = get_wavelength(profile)
+	u = broadcast(^,λ,(0:(degmax-1))')
+
+	cy = sum(u[:,1:ncenter].*center',dims=2)
+	sy = sum(u[:,1:nσ].*σ',dims=2)
+	return exp.(-1 ./ 2 .*((cy .- ay')./ sy).^2)
+end
+
+
+function get_profile(s::SpectrumModel{A,Nothing,B}) where {A,B}
+	ProfileModel(s.bbox)(;s.center,s.σ)
+end
+
+function get_profile(s::SpectrumModel{A,Nothing,B},bndbox) where {A,B}
+	ProfileModel(bndbox)(;s.center,s.σ)
+end
