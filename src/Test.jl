@@ -80,14 +80,15 @@ lamp = meanspectrum.val
 profiles, lamp = gravi_compute_lamp_transmissions(  spctr, profiles)
 
 wd = gravi_create_weighteddata(P2VM["P2VM12"], illuminated,goodpix,rov, gain)
-A = ReducingGravity.gravi_extract_channel(wd,profiles["12-A-C"],lamp)
-B = ReducingGravity.gravi_extract_channel(wd,profiles["12-B-C"],lamp)
-C = ReducingGravity.gravi_extract_channel(wd,profiles["12-C-C"],lamp)
-D = ReducingGravity.gravi_extract_channel(wd,profiles["12-D-C"],lamp)
+A = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["12-A-C"],lamp)
+B = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["12-B-C"],lamp)
+C = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["12-C-C"],lamp)
+D = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["12-D-C"],lamp)
 ϕ = ReducingGravity.gravi_initial_input_phase(A,B,C,D)
 phasors= ReducingGravity.gravi_build_ABCD_phasors(ϕ,A,B,C,D);
 phase = ReducingGravity.estimate_phase(phasors,A,B,C,D);
 rho = sqrt.(phase[:,:,1].^2 .+ phase[:,:,2] .^2)
-phase .*= 1 ./ rho
+#rho3 = (ones(360) .* median(rho,dims=1))
+phase .*= 1 ./ rho # .* rho3
 phasors= ReducingGravity.gravi_build_ABCD_phasors(phase,A,B,C,D);
 phase = ReducingGravity.estimate_phase(phasors,A,B,C,D);
