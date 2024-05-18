@@ -102,7 +102,7 @@ struct SpectrumModel{A,B,C}
 	λ::B
 	λbnd::Vector{Float64}
 	transmissions::Vector{Transmission{C}}
-	Bflat::Vector{Float64}
+	flat::Vector{Float64}
 	bbox::A
 end
 
@@ -134,19 +134,22 @@ function get_width((;σ,bbox)::SpectrumModel)
 end
 
 
-get_wavelength(::SpectrumModel{A,Nothing,B},_...) where {A,B} = nothing
+get_wavelength(::SpectrumModel{A,Nothing,B},kwds...) where {A,B} = nothing
 
-function get_wavelength((;λ)::SpectrumModel,p)
+function get_wavelength((;λ)::SpectrumModel,p;kwds...)
 	λdeg = length(λ)
  	λp = p .^(0:(λdeg-1))'* λ
 	return λp[1]
 end
 
-function get_wavelength((;λ,λbnd, bbox)::SpectrumModel)
+function get_wavelength((;λ,λbnd, bbox)::SpectrumModel; bnd=true)
 	p = bbox.indices[1]
 	λdeg = length(λ)	
 	wv = p .^(0:(λdeg-1))'* λ
-	wv[ .!(λbnd[1] .< wv .<λbnd[2])] .= NaN
+	if bnd
+		wv[ .!(λbnd[1] .< wv .<λbnd[2])] .= NaN
+	end
+
 	return wv
 end
 
