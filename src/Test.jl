@@ -1,4 +1,4 @@
-using FITSIO,LinearAlgebra,Statistics, ArrayTools, ImageFiltering,StatsBase
+using FITSIO,Statistics, ArrayTools,StatsBase
 using ReducingGravity
 
 

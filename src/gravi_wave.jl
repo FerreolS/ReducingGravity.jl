@@ -61,5 +61,5 @@ function add_spectral_law(s::SpectrumModel{A,Nothing,B},λcoefs::C) where {A,B,C
 	P = (λ).^(0:(σdeg-1))'
 	sgm = get_width(s)
 	new_σ = inv(P'*P)*P'* sgm
-	SpectrumModel(new_center,new_σ,λcoefs,[0.,+Inf],Vector{Transmission{Nothing}}(),ones(Float64,size(s.bbox,1)),s.bbox)
+	SpectrumModel(new_center,new_σ,λcoefs,[0.,+Inf],Vector{InterpolatedSpectrum{Nothing}}(),ones(Float64,size(s.bbox,1)),s.bbox)
 end

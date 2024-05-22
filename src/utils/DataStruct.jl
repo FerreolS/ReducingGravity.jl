@@ -2,14 +2,44 @@
 
 
 
-struct Transmission{B}
+struct InterpolatedSpectrum{B}
 	coefs::Vector{Float64}
-	splinebasis::B
+	basis::B
 end
 
-(self::Transmission{B})(x) where B<:BSplineBasis = Spline(self.SplineBasis,self.coefs)(x)
-(self::Transmission{B})() where B<:BSplineBasis = Spline(self.SplineBasis,self.coefs)
+(self::InterpolatedSpectrum{B})(x) where B<:BSplineBasis = Spline(self.basis,self.coefs)(x)
+#(self::InterpolatedSpectrum{B})() where B<:BSplineBasis = Spline(self.basis,self.coefs)
 
+function (self::InterpolatedSpectrum{B})(x) where B<:Interpolator
+	(;knots, kernel) = self.basis
+	notnan = isfinite.(x)
+	if any(notnan)
+		basis = build_interpolation_matrix(kernel,knots,view(x, notnan))
+		out = copy(x)
+		view(out,notnan) .= basis*self.coefs
+		return out
+	else
+		basis = build_interpolation_matrix(kernel,knots,x)
+		return basis*self.coefs
+	end
+end
+function (self::InterpolatedSpectrum{B})(x::Number) where B<:Interpolator
+	!isfinite(x) && return x 
+	(;knots, kernel) = self.basis
+	basis = build_interpolation_matrix(kernel,knots,x)
+	return (basis*self.coefs)[1]
+end
+#= 
+function (self::InterpolatedSpectrum{B})() where B<:Interpolator
+	basis = build_interpolation_matrix(kernel,knots,x)
+	return self.basis.basis * self.coefs
+end
+function recompute_basis(S::Interpolator,x)
+	(;knots, kernel, _) = S.basis
+	basis = build_interpolation_matrix(kernel,knots,x)
+	return Interpolator(knots, kernel, basis)
+end
+ =#
 
 
 struct SpectrumModel{A,B,C}
@@ -17,7 +47,7 @@ struct SpectrumModel{A,B,C}
 	σ::Vector{Float64}
 	λ::B
 	λbnd::Vector{Float64}
-	transmissions::Vector{Transmission{C}}
+	transmissions::Vector{InterpolatedSpectrum{C}}
 	flat::Vector{Float64}
 	bbox::A
 end

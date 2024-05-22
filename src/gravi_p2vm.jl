@@ -96,7 +96,7 @@ function  gravi_build_ABCD_phasors(ϕ::AbstractArray{T,2},A,B,C,D) where T
 	phasors = zeros(Float64,size(ϕ,1),4,2)
 	for l ∈ axes(ϕ,1)
 		phi,a,b,c,d = view(ϕ,l,:),view(A,l,:),view(B,l,:),view(C,l,:),view(D,l,:)
-		if any(isnan,phi) #|| any(iszero,phi)
+		if any(isnan,phi) || any(iszero,phi)
 			continue
 		end
 		(pA,pB,pC,pD) = gravi_estimate_ABCD_phasor(phi,a,b,c,d)
@@ -114,7 +114,7 @@ function gravi_build_ABCD_phasors(ϕ::AbstractArray{T,3},A,B,C,D) where {T}
 
 	for l ∈ axes(ϕ,1)
 		phi,a,b,c,d = view(ϕ,l,:,:),view(A,l,:),view(B,l,:),view(C,l,:),view(D,l,:)
-		if any(isnan,phi) #|| any(iszero,phi)
+		if any(.!isfinite,phi) || any(iszero,phi)
 			continue
 		end
 		(pA,pB,pC,pD) = gravi_estimate_ABCD_phasor(phi,a,b,c,d)

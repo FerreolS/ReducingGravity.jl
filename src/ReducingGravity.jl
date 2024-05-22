@@ -4,7 +4,6 @@ using 	FITSIO,
 		LinearAlgebra,
 		Statistics, 
 		ArrayTools, 
-		ImageFiltering,
 		StatsBase,
 		Statistics,
 		ConcreteStructs,
@@ -16,7 +15,11 @@ using 	FITSIO,
 		ChainRulesCore,
 		ParameterHandling,
 		Accessors,
-		OptimPackNextGen
+		OptimPackNextGen,
+		InterpolationKernels
+
+import 	ImageFiltering: mapwindow
+
 
 export 	gravi_data_create_bias_mask,
 		gravi_data_detector_cleanup,
@@ -40,6 +43,8 @@ export 	gravi_data_create_bias_mask,
 
 
 include("utils/FITSutils.jl")
+include("utils/WeightedData.jl")
+include("utils/Interpolation.jl")
 include("utils/DataStruct.jl")
 include("gravi_calib.jl")
 include("gravi_wave.jl")
@@ -237,7 +242,7 @@ function gravi_compute_profile(	flats::Vector{ConcreteWeightedData{T,N}},
 				haskey(bboxes,"$tel1$tel2-$chnl-C") || continue
 				bndbx =bboxes["$tel1$tel2-$chnl-C"] 
  				θ = fitprofile(flatsum,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld )
-				p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{Transmission{Nothing}}(),ones(Float64,size(bndbx,1)),bndbx)
+				p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{InterpolatedSpectrum{Nothing}}(),ones(Float64,size(bndbx,1)),bndbx)
 				push!(profile,"$tel1$tel2-$chnl-C"=>p) 
 			end
 		end
@@ -252,10 +257,12 @@ function gravi_compute_lamp_transmissions(	spectra::Dict{String, ConcreteWeighte
 										nb_transmission_knts=20,
 										nb_lamp_knts=400,									
 										kwds...) where {T,N,A,B,C} 
+
+	profiles = gravi_compute_wavelength_bounds(spectra,profiles)
 	if C==Nothing
-		profiles =gravi_init_transmissions(profiles;	nb_transmission_knts=nb_transmission_knts,kwds...)
-	elseif nb_transmission_knts != (length(first(values(profiles)).transmissions[1].SplineBasis)-1) 
-		profiles =gravi_init_transmissions(profiles;	nb_transmission_knts=nb_transmission_knts,kwds...)
+		profiles =gravi_init_transmissions(Val(:MySpline),profiles;	nb_transmission_knts=nb_transmission_knts,kwds...)
+	elseif nb_transmission_knts != (length(first(values(profiles)).transmissions[1].coefs)) 
+		profiles =gravi_init_transmissions(Val(:MySpline),profiles;	nb_transmission_knts=nb_transmission_knts,kwds...)
 	end
 	
 	for i ∈ 1:loop
