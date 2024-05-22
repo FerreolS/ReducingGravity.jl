@@ -32,7 +32,6 @@ export 	gravi_data_create_bias_mask,
 		gravi_create_weighteddata,
 		gravi_spectral_calibration,
 		gravi_compute_lamp_transmissions,
-		gravi_compute_gain,
 		WeightedData,
 		AbstractWeightedData,
 		ConcreteWeightedData,
@@ -140,8 +139,6 @@ function gravi_compute_badpix(	rawdata::AbstractArray{T,N},
 	if N==2
 		mdata = data
 	else
-		#mdata = dropdims(median(data, dims=3),dims=3)
-		#mdata = dropdims(mapslices(x->quantile((x),0.75), data, dims=3),dims=3) # to account for higly blinking pixels  # median(, dims=) is type unstable
 		mdata = map(x->quantile(x,0.75), eachslice(data,dims=(1,2)))
 
 	end
@@ -260,9 +257,9 @@ function gravi_compute_lamp_transmissions(	spectra::Dict{String, ConcreteWeighte
 
 	profiles = gravi_compute_wavelength_bounds(spectra,profiles)
 	if C==Nothing
-		profiles =gravi_init_transmissions(Val(:MySpline),profiles;	nb_transmission_knts=nb_transmission_knts,kwds...)
+		profiles =gravi_init_transmissions(profiles;	nb_transmission_knts=nb_transmission_knts,kwds...)
 	elseif nb_transmission_knts != (length(first(values(profiles)).transmissions[1].coefs)) 
-		profiles =gravi_init_transmissions(Val(:MySpline),profiles;	nb_transmission_knts=nb_transmission_knts,kwds...)
+		profiles =gravi_init_transmissions(profiles;	nb_transmission_knts=nb_transmission_knts,kwds...)
 	end
 	
 	for i ∈ 1:loop

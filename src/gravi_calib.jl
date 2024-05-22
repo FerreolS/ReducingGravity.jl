@@ -164,108 +164,6 @@ function gravi_extract_profile(	data::AbstractArray{T,N},
 	return profiles
 end
 
-#= function gravi_extract_profile(	data::AbstractArray{T,N},
-								precision::Union{BitMatrix,AbstractArray{T,N}},
-								profile::SpectrumModel; 
-								restrict=0.01, 
-								nonnegative=false, 
-								robust=false) where {T,N}
-	bbox = profile.bbox
-	if N==2
-		val= view(data,bbox)
-		prec= view(precision,bbox)
-	else
-		val= view(data,bbox,:)
-		prec= view(precision,bbox,:)
-	end
-	model =  get_profile(profile)
-	if restrict>0
-		model .*= (model .> restrict)
-	end
-
-	αprecision =sum(  model.^2 .* prec ,dims=2)[:]
-	α = sum(model .* prec .* val,dims=2)[:] ./ αprecision
-	nanpix = .! isnan.(α)
-	if nonnegative
-		positive = nanpix .& (α .>= T(0))
-	else
-		positive = nanpix
-	end
-	return	positive .* α
-
-end
-
- =#
-
-
-function gravi_compute_gain(	flats::Vector{<:AbstractArray{T,3}},
-								illuminated::BitMatrix,
-								goodpix::BitMatrix,
-								profiles::Dict{String,<:SpectrumModel}; 
-								restrict=0.01, 
-								thrsld=0.1,
-								nonnegative=false,  
-								filterblink=true,
-								unbiased=true) where {T}
-	
-	
-	S2 = Vector{T}()
-	#VarS2 = Vector{T}()
-	Avg = Vector{T}()
-	goodpix = copy(goodpix)
-	
-	 for tel1 ∈ 1:4
-		rawdata = flats[tel1]
-		bias, flatdata = gravi_data_detector_cleanup(rawdata,illuminated)
-		
-		spectra = sum(flatdata.*goodpix, dims=(2,3))[:] 
-		firstidx = findfirst(x -> x>mean(spectra)*thrsld,spectra)
-		lastidx = findlast(x -> x>mean(spectra)*thrsld,spectra)
-		
-		
-		if filterblink
-			blink = gravi_compute_blink(flatdata,bias=bias)
-			goodpix .&= (sum(blink,dims=3) .> max(3,0.75 * size(blink,3)))
-		else
-			blink = trues(size(flatdata))
-		end
-		for tel2 ∈ 1:4
-			tel1==tel2 && continue
-			for chnl ∈ ["A","B","C","D"]
-				haskey(profiles,"$tel1$tel2-$chnl-C") || continue
-				profile =profiles["$tel1$tel2-$chnl-C"] 
-				bbox = profile.bbox[firstidx:lastidx,:]
-				data = view(flatdata,bbox,:)
-				gpblink = view(goodpix,bbox).*view(blink,bbox,:)
-				
-				Nobs = sum(gpblink, dims=3)[:,:,1]
-				avg =  (sum(data.*gpblink, dims=3)[:,:,1] ./ Nobs)
-
-				
-				if restrict>0
-					model =  get_profile(profile, bbox)
-					restricted = (model .> restrict) .&& (Nobs .>3) 
-				else
-					restricted =(Nobs .>3)
-				end
-				Nobs =Nobs[restricted]
-
-				push!(Avg, avg[restricted]...)
-				push!(S2 , (sum(gpblink.*(data .- avg).^2,dims=3)[:,:,1][restricted] ./ (Nobs .- 1))...)
-				
-				#μ4 =  sum(gpblink .*(data .- avg).^4, dims=3)[:,:,1][restricted] ./ Nobs
-				#μ2 =  sum(gpblink .*(data .- avg).^2, dims=3)[:,:,1][restricted] ./ Nobs
-				#push!(VarS2 , (μ4 ./ Nobs .- (Nobs .-3) ./ (Nobs .* (Nobs .-1)) .* μ2.^2)...)
-			end
-		end
-	end
-	P = hcat(ones(size(Avg)), Avg)
-	#wRG = inv(P'*( P ))
-	#ron, gain = wRG * P' * (S2 )
-
-	ron, gain  = ldiv!(cholesky!(Symmetric(P'*P)),P'*S2 )
-	return sqrt(ron),1/gain
-end
 
 function gravi_compute_wavelength_bounds(spectra::Dict{String, ConcreteWeightedData{T,N}},
 										profiles::Dict{String,SpectrumModel{A,B,C}},
@@ -290,56 +188,6 @@ function gravi_compute_wavelength_bounds(spectra::Dict{String, ConcreteWeightedD
 		pr_array[i] = key=>profile
 	end
 	return Dict(pr_array)
-
-end
-function gravi_compute_transmissions(	spectra::Dict{String, ConcreteWeightedData{T,N}},
-										profiles::Dict{String,SpectrumModel{A,B,C}},
-										lamp;
-										kwds...) where {T,N,A,B,C} 
-
-	
-	#nspectra = length(spectra)
-	#meanspectrum = sum(values(spectra)) / nspectra
-	#rng= 1:length(meanspectrum)
-	#λmin = minimum([get_wavelength(p,1) for p ∈ values(profiles)])
-	#λmax = maximum([get_wavelength(p,360) for p ∈ values(profiles)])
-	#knt = SVector{18,Float32}(1.0, 24.0, 35.0, 41.0, 46.0, 58.0, 69.0, 91.0, 114.0, 125.0, 136.0, 159.0, 181.0, 226.0, 271.0, 294.0, 316.0, 360.0)
-	#sp4 = Spline1D(1:360, meanspectrum.val; w=meanspectrum.precision, k=3, bc="zero",s=0.01)
-	#knt =  LinRange(λmin,λmax,20)
-	#BSp = BSplineBasis(BSplineOrder(3), knt)
-	#ncoefs = length(BSp)
-	#initcoefs =  [zeros(Float64,3)...,ones(Float64,ncoefs-6)...,zeros(Float64,3)...] 
-	#coefs = [ones(T,ncoefs) for i ∈ 1:nspectra]
-	#lamp = meanspectrum.val
-	pr_array = Vector{Pair{String,SpectrumModel{A,B,C}}}(undef,length(profiles))
-	Threads.@threads for (i,(key,profile)) ∈ collect(enumerate(profiles) )
-		tel1 = key[1] 
-		tel2 = key[2]
-		key1 = "$tel1-$key" 
-		key2 = "$tel2-$key" 
-		initcoefs1 = profile.transmissions[1].coefs
-		BSp1 = profile.transmissions[1].basis
-		initcoefs2 = profile.transmissions[2].coefs
-		BSp2 = profile.transmissions[2].basis
-
-		wvlngth = get_wavelength(profile)
-		good = .!isnan.(wvlngth)
-		wvgood = wvlngth[good]
-		lmp = lamp.(wvgood)
-
-		transmissions = [gravi_fit_transmission( view(spectra[key1],good),lmp,copy(initcoefs1),BSp1,wvgood; kwds...)
-						gravi_fit_transmission( view(spectra[key2], good),lmp,copy(initcoefs2),BSp2, wvgood; kwds...)]
-		@reset profile.transmissions = transmissions
-
-		flat = ones(Float64,length(spectra[key1]))
-		flat[good] .= ((view(spectra[key1],good) / (profile.transmissions[1].(wvgood).* lmp) + view(spectra[key2],good) / (profile.transmissions[2].(wvgood).* lmp))/2).val
-		
-		@reset profile.flat = flat
-		pr_array[i] = key=>profile
-	end
-	profiles = Dict(pr_array)
-
-	return profiles
 
 end
 
@@ -383,30 +231,6 @@ function gravi_compute_transmissions(  spectra::Dict{String, ConcreteWeightedDat
 end
 
 function gravi_init_transmissions(profiles::Dict{String,SpectrumModel{A,B,C}};
-									nb_transmission_knts=20,kwds...
-									) where {A,B,C} 
-									
-	λmin = minimum([get_wavelength(p,1) for p ∈ values(profiles)])
-	λmax = maximum([get_wavelength(p,360) for p ∈ values(profiles)])
-	#knt = SVector{18,Float32}(1.0, 24.0, 35.0, 41.0, 46.0, 58.0, 69.0, 91.0, 114.0, 125.0, 136.0, 159.0, 181.0, 226.0, 271.0, 294.0, 316.0, 360.0)
-	#sp4 = Spline1D(1:360, meanspectrum.val; w=meanspectrum.precision, k=3, bc="zero",s=0.01)
-	knt =  LinRange(λmin,λmax,nb_transmission_knts)
-	BSp = BSplineBasis(BSplineOrder(3), knt)
-	ncoefs = length(BSp)
-
-	initcoefs =  [zeros(Float64,3)...,ones(Float64,ncoefs-6)...,zeros(Float64,3)...] 								
-	pr_array = Vector{Pair{String,SpectrumModel{A,B,typeof(BSp)}}}(undef,length(profiles))
-	for (i,(key,profile)) ∈ collect(enumerate(profiles) )
-		@reset profile.transmissions = [InterpolatedSpectrum(copy(initcoefs),BSp)
-										InterpolatedSpectrum(copy(initcoefs),BSp)]
-		pr_array[i] = key=>profile
-	end
-	profiles = Dict(pr_array)
-	return profiles
-end
-
-
-function gravi_init_transmissions(::Val{:MySpline},profiles::Dict{String,SpectrumModel{A,B,C}};
 									nb_transmission_knts=20,
 									kernel = CatmullRomSpline(),
 									kwds...
@@ -433,25 +257,6 @@ function gravi_init_transmissions(::Val{:MySpline},profiles::Dict{String,Spectru
 end
 
 function gravi_fit_transmission(	spectrum::A,
-									lampspectrum::Vector{Float64},
-									initcoefs::Vector{Float64},
-									B,
-									rng;
-									verb=0,
-									maxeval=50, 
-									kwd...) where {T, A<:AbstractWeightedData{T, 1}} 
-	function loss(rng,spectrum,B,lampspectrum,coefs) 
-		S = Spline(B,coefs)
-		return likelihood(spectrum,map(S,rng) .* lampspectrum)
-	end
-	f(x) = loss(rng,spectrum,B,lampspectrum,x)
-	coefs = vmlmb(f,  initcoefs ;autodiff=true, verb=verb,maxeval=maxeval,kwd...)
-	
-	return InterpolatedSpectrum(coefs,B)
-
-end
-
-function gravi_fit_transmission(	spectrum::A,
 									lampspectrum,
 									B::Interpolator,
 									wavelength;
@@ -462,40 +267,6 @@ function gravi_fit_transmission(	spectrum::A,
 
 end
 
-function gravi_compute_lamp(spectra::Dict{String, D}, 
-							profiles::Dict{String,SpectrumModel{A,B,C}};
-							nb_lamp_knts=360,
-							init_lamp = nothing,
-							kwds...) where {T,A,B,C,D<:AbstractWeightedData{T, 1}} 
-	
-	data_trans = Vector{@NamedTuple{spectrum::WeightedData{Float64,1,SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false},SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false}},
-									transmission::InterpolatedSpectrum{C},wavelength::B}}(undef,length(spectra))	
-	#wavelength = Vector{Vector{Float64}}(undef,length(spectra))	
-	for (i,(key,spectrum)) ∈ enumerate(spectra)		
-		profile = profiles[ key[3:end]]
-		transmission = key[1] == key[3] ? profile.transmissions[1] : profile.transmissions[2]
-		wvlngth =get_wavelength(profile)
-		good = .!isnan.(wvlngth)
-		data_trans[i] = (;spectrum = view(spectrum,good), transmission = transmission, wavelength = wvlngth[good])
-	end
-	local initcoefs, BSp 
-
-	if isnothing(init_lamp)
-		λmin = minimum([get_wavelength(p,1) for p ∈ values(profiles)])
-		λmax = maximum([get_wavelength(p,360) for p ∈ values(profiles)])
-		knt = LinRange(λmin,λmax,nb_lamp_knts)
-	#@MVector [i for i ∈ LinRange(λmin,λmax,360)]
-	#knt = @SVector [Float64(i) for i ∈ LinRange(λmin,λmax,360)]
-		BSp = BSplineBasis(BSplineOrder(3), knt)
-		ncoefs = length(BSp)
-		initcoefs =  [zeros(Float64,3)...,ones(Float64,ncoefs-6)...,zeros(Float64,3)...] 
-	else
-		BSp =basis(init_lamp)
-		initcoefs = coefficients(init_lamp)
-	end
-	coefs = gravi_fit_lamp(  data_trans,copy(initcoefs),BSp; kwds...)
-	return Spline(BSp,coefs)
-end
 
 
 
@@ -542,23 +313,7 @@ function gravi_fit_lamp(data_trans,(;kernel,knots)::Interpolator)
 	return pinv(A) * b
 end
 
-function gravi_fit_lamp(data_trans,
-						initcoefs::Vector{Float64},
-						B;
-						verb=0,
-						maxeval=50, 
-						kwd...) 
 
-
-	# loss = mapreduce((x) -> likelihood(x.spectrum, x.transmission(x.wavelength) .* ,
-	function loss(data_trans, B,coefs) 
-		S = Spline(B,coefs)
-		return mapreduce(x -> likelihood(x.spectrum, x.transmission.(x.wavelength) .* S.(x.wavelength)),+,data_trans)
-	end
-	f(x) = loss(data_trans, B,x)
-	coefs = vmlmb(f,  initcoefs ;autodiff=true, verb=verb,maxeval=maxeval,kwd...)
-	return coefs
-end
 
 function gravi_extract_profile_flats_from_p2vm(	P2VM::Dict{String, WeightedData{T, 2,A,B}}, 
 												dark::AbstractWeightedData{T,N},
@@ -690,59 +445,4 @@ function build_ron_and_gain(usable::BitMatrix,
 end
 
 
-#= 
-function test(sm::SpectrumModel{T};center=[0.0],fwhm=[1.0],amplitude=[1.0]) where {T}
-	out=Matrix{T}(undef,length(sm.ax), length(sm.ay))
-	for (iy,y) ∈ enumerate(sm.ay)
-		c,f,amp=  zeros(T,3)
-		
-		for (center_index,center_coefs) ∈ enumerate(center)
-			c += T(sm.preconditionner[center_index]*center_coefs .* y.^ (center_index-1))
-		end
-		for (fwhm_index,fwhm_coefs) ∈ enumerate(fwhm)
-			f += T(sm.preconditionner[fwhm_index]*fwhm_coefs .* y.^ (fwhm_index-1))
-		end
-		for (amp_index,amp_coefs) ∈ enumerate(amplitude)
-			amp += T(sm.preconditionner[amp_index]*amp_coefs .* y.^(amp_index-1))
-		end
-		halfprecision = inv((T(2/ (2 * sqrt(2 * log(2.))))*f)^2)
-
-		for (ix,x) ∈ enumerate(sm.ax)
-			out[ix,iy] = amp * exp(-(x - c)^2 * halfprecision)
-		end
-	end
-	return out
-end 
-
-
-function gravi_compute_transmission_and_lamp(	spectra::Dict{String, AbstractWeightedData{T, 1}};  
-										verb=10,maxeval=50, kwd...) where T 
-	spectraArray =values(spectra)
-	nspectra = length(spectra)
-	meanspectrum = sum(spectraArray) / nspectra
-	rng= 1:length(meanspectrum)
-	knt = SVector{18,Float32}(1.0, 24.0, 35.0, 41.0, 46.0, 58.0, 69.0, 91.0, 114.0, 125.0, 136.0, 159.0, 181.0, 226.0, 271.0, 294.0, 316.0, 360.0)
-	#sp4 = Spline1D(1:360, meanspectrum.val; w=meanspectrum.precision, k=3, bc="zero",s=0.01)
-	B = BSplineBasis(BSplineOrder(3), knt)
-	ncoefs = length(B)
-	coefs = [ [zeros(Float64,3)...,ones(Float64,ncoefs-6)...,zeros(Float64,3)...] for i ∈ 1:nspectra]
-	#coefs = [ones(T,ncoefs) for i ∈ 1:nspectra]
-	lamp = meanspectrum.val
-
-	
-	x = (;coefs=coefs)
-	x0, restructure = destructure(x)
-	function loss(rng,spectraArray,B;coefs::Vector{<:Vector{T1}}= coefs, lamp::Vector{T2}=lamp) where{T1,T2}
-		S = Spline.(B,coefs)
-		return mapreduce((x,y)->likelihood(y,map(x,rng) .* lamp)::promote_type(T1,T2),+,S,spectraArray)
-	end
-	f(x) = loss(rng,spectraArray,B;restructure(x)...)
-	xopt = vmlmb(f,  x0 ;autodiff=true, verb=verb,maxeval=maxeval,kwd...)
-	(;coefs) = restructure(xopt)
-
-	transmissions = Dict(val=>Transmission(coefs[i],B) for (i,val) ∈ enumerate(keys(spectra)))
-	return (transmissions, lamp)
-
-end
-=#
  
