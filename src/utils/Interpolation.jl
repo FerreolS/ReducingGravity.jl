@@ -27,6 +27,7 @@ function build_interpolation_matrix(kernel::Kernel{T,N}, knots, samples) where {
 	return K
 end
 
+build_interpolation_matrix((;knots,kernel)::Interpolator, samples) = build_interpolation_matrix(kernel, knots, samples) 
 #= function find_index(knots,sample)
 	b = findfirst(sample .<= knots)
 	b = isnothing(b) ? firstindex(knots) : b 

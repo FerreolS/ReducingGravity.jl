@@ -16,7 +16,8 @@ using 	FITSIO,
 		ParameterHandling,
 		Accessors,
 		OptimPackNextGen,
-		InterpolationKernels
+		InterpolationKernels,
+		SparseArrays
 
 import 	ImageFiltering: mapwindow
 
