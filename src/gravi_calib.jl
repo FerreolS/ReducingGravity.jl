@@ -12,7 +12,7 @@ function gravi_compute_wavelength_bounds(spectra::Dict{String, ConcreteWeightedD
 		key1 = "$tel1-$key" 
 		key2 = "$tel2-$key" 
 
-		wvlngth = get_wavelength(profile)
+		wvlngth = get_wavelength(profile; bnd=false)
 
 		thrs1 = median(spectra[key1].val) .* thrs
 		thrs2 = median(spectra[key2].val) .* thrs
@@ -240,6 +240,7 @@ function gravi_compute_gain_from_p2vm(	P2VM::Dict{String, ConcreteWeightedData{T
 		end
 		
 	end
+	#return avg,prec
 	usable = ill .& goodpix  .& reduce(.&,prec .!=0, dims=3,init=true)[:,:,1]
 	gain, rov = build_ron_and_gain(usable,avg,prec; substract_dark=substract_dark,fix_gain=fix_gain)
 	darkp2vm = WeightedData(avg[:,:,5],prec[:,:,5])
@@ -261,8 +262,8 @@ function build_ron_and_gain(usable::BitMatrix,
 	for i ∈ axes(usable,1)
 		u = findall(usable[i,:] )
 		if substract_dark
-		a = (view(avg[i,:,:],u,:) .- view(avg[i,:,:],u,5))[:]
-		v = (1 ./ view(prec[i,:,:],u,:) .+ 1 ./ view(prec[i,:,5],u))[:]
+			a = (view(avg[i,:,:],u,:) .- view(avg[i,:,:],u,5))[:]
+			v = (1 ./ view(prec[i,:,:],u,:) .+ 1 ./ view(prec[i,:,5],u))[:]
 		else 
 			a = (view(avg[i,:,:],u,:))[:]
 			v = (1 ./ view(prec[i,:,:],u,:))[:]
@@ -280,5 +281,106 @@ function build_ron_and_gain(usable::BitMatrix,
 	return 1 ./ gain, rov
 end
 
+function gravi_compute_gain_from_p2vm(	flats::Vector{C}, 
+										dark::C,
+										profiles::Dict{String,<:SpectrumModel},
+										goodpix::BitMatrix; 
+										restrict=0.0, 
+										fix_gain=true,
+										substract_dark = true,
+										kwds...
+										) where {T,C<:ConcreteWeightedData{T, 2}}
+											
+	sz = size(dark)
+	avg = Array{T,3}(undef,sz...,length(flats)+1)
+	prec = Array{T,3}(undef,sz...,length(flats)+1)
+	
+	for (i,flat) ∈ enumerate(flats)
+		avg[:,:,i] = flat.val
+		prec[:,:,i] = flat.precision
+	end
+	
+	avg[:,:,end] = dark.val
+	prec[:,:,end] = dark.precision
 
+
+	ill = falses(sz)
+	for profile ∈ values(profiles )
+
+		bbox = profile.bbox
+
+		if restrict>0
+			model =  get_profile(profile, bbox)
+			bbox = bbox[model .> restrict]
+		else
+			bbox = bbox[:]
+		end
+		
+		view(ill,bbox) .= true
+				
+	end
+	usable = ill .& goodpix  .& reduce(.&,prec .!=0, dims=3,init=true)[:,:,1]
+	gain, rov = build_ron_and_gain(usable,avg,prec; substract_dark=substract_dark,fix_gain=fix_gain)
+
+	return gain, rov
+
+end
  
+
+function gravi_compute_flat_and_dark_from_p2vm(	P2VM::Dict{String, Array{T, 3}}, 
+										bboxes::Dict{String,C},
+										illuminated::BitMatrix,
+										goodpix::BitMatrix; 
+										filterblink=true,
+										unbiased=true, 
+										kwds...
+											) where {T,C}
+											
+	sz = size(first(values(P2VM)))
+	sorted = Array{T,4}(undef,sz...,6)
+	ind = ones(Int,length(bboxes))
+
+	for (i,(key,bbox)) ∈ enumerate(bboxes )
+
+
+		
+		
+		for (baseline,data) ∈ P2VM
+			tel1,tel2 = baseline[5] , baseline[6]
+			#tel1,tel2 = baseline[5] < baseline[6] ? (baseline[5] , baseline[6]) : (baseline[6] , baseline[5])
+
+		
+			t1,t2 = key[1] , key[2] 
+			#t1,t2 = key[1] < key[2] ? (key[1],key[2]) : (key[2],key[1] )
+			
+			ill1 = (t1 == tel1) || (t1 == tel2) 
+			ill2 = (t2 == tel1) || (t2 == tel2) 
+			if (ill1 && ill2 ) # interferometric channel
+				idx = 6
+			elseif (!ill1 && !ill2)  # non illuminated channel
+				idx =5
+			else 
+				idx =  ind[i]
+				ind[i] += 1
+			end 
+			#avgbias, data = gravi_data_detector_cleanup(data,illuminated)
+			view(sorted,bbox,:,idx)  .= view(data,bbox,:)
+			
+		end
+		
+	end
+	#return sorted
+	wd = Vector{ConcreteWeightedData{T,2}}(undef,5)
+	gp = Vector{BitMatrix}(undef,5)
+	Threads.@threads for i∈1:5
+		wd[i], gp[i] = gravi_create_weighteddata(sorted[:,:,:,i],illuminated,goodpix,filterblink=filterblink,unbiased=unbiased,keepbias=true,cleanup=false)
+	end
+	#goodpix .&= reduce(.&,gp)
+	goodpix .&= gp[5]
+	Threads.@threads for i∈1:5
+		flagbadpix!(wd[i],.!goodpix)
+	end
+	
+	return wd[1:4], wd[5], sorted[:,:,:,6],goodpix
+
+end

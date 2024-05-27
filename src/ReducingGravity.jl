@@ -45,6 +45,7 @@ include("utils/FITSutils.jl")
 include("utils/WeightedData.jl")
 include("utils/Interpolation.jl")
 include("utils/DataStruct.jl")
+include("gravi_profile.jl")
 include("gravi_calib.jl")
 include("gravi_wave.jl")
 include("gravi_p2vm.jl")
@@ -185,6 +186,7 @@ function gravi_create_weighteddata(	rawdata::AbstractArray{T,3},
 	else
 		blink = trues(size(data))
 	end
+	goodpix .&= illuminated
 	goodblink = goodpix.*blink
 	avg = (sum(data.*goodblink, dims=3) ./ sum(goodblink, dims=3))[:,:,1]
 	if unbiased
@@ -192,6 +194,7 @@ function gravi_create_weighteddata(	rawdata::AbstractArray{T,3},
 	else
 		wgt =  (sum(goodblink.*(data .- avg).^2,dims=3).\ (sum(goodblink,dims=3) ))[:,:,1]
 	end
+	goodpix .&= isfinite.(wgt) .&& isfinite.(avg)
 	avg[.!(goodpix)] .= zero(T)
 	wgt[.!(goodpix)] .= zero(T)
 	weighteddata = WeightedData(avg,wgt)
@@ -239,6 +242,28 @@ function gravi_compute_profile(	flats::Vector{ConcreteWeightedData{T,N}},
 				haskey(bboxes,"$tel1$tel2-$chnl-C") || continue
 				bndbx =bboxes["$tel1$tel2-$chnl-C"] 
  				θ = fitprofile(flatsum,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld )
+				p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{InterpolatedSpectrum{Nothing}}(),ones(Float64,size(bndbx,1)),bndbx)
+				push!(profile,"$tel1$tel2-$chnl-C"=>p) 
+			end
+		end
+	end
+	return profile
+end
+
+function gravi_compute_profile(	flats::ConcreteWeightedData{T,N},
+								bboxes::Dict{String,C}; 
+								center_degree=4, 
+								σ_degree=4, 
+								thrsld=0.1) where {T,N,C}
+	profile = Dict{String,SpectrumModel{C,Nothing,Nothing}}()
+	#profile = Dict{String,SpectrumModel}()
+	Threads.@threads for tel1 ∈ 1:4
+		for tel2 ∈ 1:4
+			tel1==tel2 && continue
+			for chnl ∈ ["A","B","C","D"]
+				haskey(bboxes,"$tel1$tel2-$chnl-C") || continue
+				bndbx =bboxes["$tel1$tel2-$chnl-C"] 
+ 				θ = fitprofile(flats,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld )
 				p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{InterpolatedSpectrum{Nothing}}(),ones(Float64,size(bndbx,1)),bndbx)
 				push!(profile,"$tel1$tel2-$chnl-C"=>p) 
 			end

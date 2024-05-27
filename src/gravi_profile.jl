@@ -2,6 +2,7 @@ function fitprofile(data::AbstractWeightedData{T,2},bndbx::C; center_degree=4, �
 
 	fulldata = view(data,bndbx)
 	spectra = (sum(fulldata.val .* fulldata.precision,dims=2)./ sum(fulldata.precision,dims=2))[:]
+	spectra[isnan.(spectra)].=T(0)
 	firstidx = findfirst(x -> x>mean(spectra)*thrsld,spectra)
 	lastidx = findlast(x -> x>mean(spectra)*thrsld,spectra)
 
@@ -91,11 +92,12 @@ function gravi_extract_profile(	data::AbstractWeightedData{T,N},
 	end
 	model =  get_profile(profile)
 	if restrict>0
-		model .*= (model .> restrict)
+		#model .*= (model .> restrict)
+		precision .*=  (model .> restrict)
 	end
 
-	αprecision = dropdims(sum(  model.^2 .* precision ,dims=2),dims=2)
-	α = dropdims(sum(model .* precision .* val,dims=2),dims=2) ./ αprecision
+	αprecision = sum(  model.^2 .* precision ,dims=2)
+	α = sum(model .* precision .* val,dims=2) ./ αprecision
 
 	nanpix = .! isnan.(α)
 	if nonnegative
@@ -104,10 +106,11 @@ function gravi_extract_profile(	data::AbstractWeightedData{T,N},
 		positive = nanpix
 	end
 
-	wd = WeightedData(positive .* α, positive .* αprecision)
+	wd = WeightedData(dropdims(positive .* α,dims=2), dropdims(positive .* αprecision,dims=2))
 
 	if robust # Talwar hard descender
-		res = sqrt.(precision) .* (wd.val  .* model .- val) 
+		#@show size(precision), size(wd), size(model) , size(val)
+		res = sqrt.(precision) .* (positive .* α  .* model .- val) 
 		
 		good = (T(-2.795) .< res .<  T(2.795))
 		αprecision =dropdims(sum( good .* model.^2 .* precision ,dims=2),dims=2)
