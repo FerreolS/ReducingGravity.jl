@@ -160,7 +160,7 @@ function gravi_compute_blink(	data::AbstractArray{T,3};
 	#mdata = map(median, eachslice(data,dims=(1,2)))
 	#mdata = dropdims(median(data, dims=3),dims=3) # median(, dims=) is type unstable
 	mdata = map(x->quantile(x,0.5), eachslice(data,dims=(1,2)))
-	ffiltered = (data .- mapwindow(median, data,blinkkernel,border="circular")) ./ max.(mdata , bias)
+	ffiltered = (data .- mapwindow(median, data,blinkkernel,border="circular")) ./ sqrt.(max.(mdata , bias))
 
 	σ = mad(ffiltered)
 	threshold = T.(temporalthresold * σ)
@@ -169,16 +169,19 @@ function gravi_compute_blink(	data::AbstractArray{T,3};
 end
 
 # unbiased estimator see  https://stats.stackexchange.com/questions/136976/find-an-unbiased-estimator-of-sigma-1  and "Aspects of multivariate statistical theory" 
-function gravi_create_weighteddata(	rawdata::AbstractArray{T,3},
+function gravi_create_weighteddata(	data::AbstractArray{T,3},
 									illuminated::BitMatrix,
 									goodpix::BitMatrix; 
+									cleanup = true,
 									filterblink=true,
 									unbiased=true, 
+									bias=20,
 									kwd...) where T
 	
 	goodpix = copy(goodpix)
-
-	bias,data = gravi_data_detector_cleanup(rawdata,illuminated;kwd...)
+	if cleanup
+		bias,data = gravi_data_detector_cleanup(data,illuminated;kwd...)
+	end
 
 	if filterblink
 		blink = gravi_compute_blink(data,bias=bias;kwd...)
@@ -203,17 +206,21 @@ function gravi_create_weighteddata(	rawdata::AbstractArray{T,3},
 end
 
 
-function gravi_create_weighteddata(	rawdata::AbstractArray{T,3},
+function gravi_create_weighteddata(	data::AbstractArray{T,3},
 									illuminated::BitMatrix,
 									goodpix::BitMatrix, 
 									rov,
 									gain;
+									cleanup=true,
 									dark = T(0),
+									bias=T(20),
 									bndbox = CartesianIndices(goodpix),
 									kwd...) where T
 	
 
-	bias,data = gravi_data_detector_cleanup(rawdata,illuminated)
+	if cleanup
+		bias,data = gravi_data_detector_cleanup(data,illuminated)
+	end
 	data = view(data .- dark,bndbox,:)
 	rov = view(rov,bndbox.indices[1])
 	gain = view(gain,bndbox.indices[1])
@@ -275,7 +282,7 @@ end
 function gravi_compute_lamp_transmissions(	spectra::Dict{String, ConcreteWeightedData{T,N}},
 										profiles::Dict{String,SpectrumModel{A,B,C}};
 										lamp = nothing,
-										loop=1,
+										loop=5,
 										nb_transmission_knts=20,
 										nb_lamp_knts=400,									
 										kwds...) where {T,N,A,B,C} 
@@ -321,7 +328,7 @@ function gravi_spectral_calibration(	wave::AbstractWeightedData{T, 2},
 end
 
 
-
+#= 
 
 function gravi_create_single_baseline(	baseline::String,
 										data::AbstractWeightedData{T,N},
@@ -382,5 +389,6 @@ function gravi_create_single_baseline(	baseline::String,
 		profile["$tel1$tel2-$chnl-C"]
 	end	
 end
+ =#
 
 end # module ReducingGravity

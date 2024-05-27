@@ -15,7 +15,7 @@ goodpix = gravi_compute_badpix(darkflat,illuminated,spatialkernel=(11,1))
 illuminated = illuminated .|| .!goodpix
 
 
-darkflat,goodpix2  = gravi_create_weighteddata(darkflat,illuminated,goodpix)
+darkflat,goodpix  = gravi_create_weighteddata(darkflat,illuminated,goodpix)
 
 
 flat = Vector{WeightedData{Float32, 2,Matrix{Float32}, Matrix{Float32}}}(undef,4)
@@ -56,8 +56,8 @@ P2VM = Vector{Pair{String, Array{Float32, 3}}}(undef,len_p2vm)
 P2VMwd = Vector{Pair{String,ConcreteWeightedData{Float32,2}}}(undef,len_p2vm)
 Threads.@threads for (i,pv2mfile) ∈ collect(enumerate(values(filter(x -> occursin("P2VM", x.second.type), flist))))
 	rawdata =read(FITS(pv2mfile.path)["IMAGING_DATA_SC"])
-	P2VM[i] = pv2mfile.type =>rawdata
-	data,_ = gravi_create_weighteddata(rawdata,illuminated,goodpix; filterblink=true, blinkkernel=(1,1,9),keepbias=true)
+	P2VM[i] = pv2mfile.type => gravi_data_detector_cleanup(rawdata,illuminated,keepbias=true)[2]
+	data,_ = gravi_create_weighteddata(rawdata,illuminated,goodpix; filterblink=true, blinkkernel=(1,1,9),keepbias=true, cleanup=false)
 	P2VMwd[i] = pv2mfile.type =>data
 end
 
@@ -65,7 +65,7 @@ P2VM = Dict(P2VM)
 P2VMwd = Dict(P2VMwd)
 
 darkp2vm, gain, rov = gravi_compute_gain_from_p2vm(P2VMwd,profiles,goodpix)
-spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkp2vm,profiles; nonnegative=true, robust=true)
+spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkp2vm,profiles; nonnegative=true, robust=false)
 
 profiles, lamp = gravi_compute_lamp_transmissions(  spctr, profiles)
 
