@@ -83,7 +83,9 @@ function gravi_extract_profile(	data::AbstractWeightedData{T,N},
 								profile::SpectrumModel; 
 								restrict=0.01, 
 								nonnegative=false, 
-								robust=false) where {T,N}
+								robust=false,
+								kwds...
+								) where {T,N}
 	bbox = profile.bbox
 	if  ndims(bbox)<N
 		(;val, precision) = view(data,bbox,:)

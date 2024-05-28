@@ -56,7 +56,7 @@ function gravi_compute_transmissions(  spectra::Dict{String, ConcreteWeightedDat
 
 		flat = ones(Float64,length(spectra[key1]))
 		flat[good] .= ((view(spectra[key1],good) / (profile.transmissions[1].(wvgood).* lmp) + view(spectra[key2],good) / (profile.transmissions[2].(wvgood).* lmp))/2).val
-		
+		flat[flat.==0] .= 1
 		@reset profile.flat = flat
 		pr_array[i] = key=>profile
 	end

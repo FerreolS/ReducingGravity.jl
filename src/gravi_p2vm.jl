@@ -167,7 +167,8 @@ function gravi_build_p2vm_interf(p2vm_data,profiles,lamp;loop_with_norm=5,loop=5
 		for _ ∈ 1:loop_with_norm
 			rho = sqrt.(visibilities[:,:,1].^2 .+ visibilities[:,:,2] .^2)
 			#rho3 = (ones(360) .* median(rho,dims=1))
-			visibilities .*= 1 ./ rho # .* rho3
+			rho3 = (ones(360) .* median(rho[50:200,:],dims=1))
+			visibilities .*= 1 ./ rho  .* rho3
 			phasors= gravi_build_ABCD_phasors(visibilities,A,B,C,D);
 			visibilities = estimate_visibility(phasors,A,B,C,D);
 		end
@@ -205,6 +206,7 @@ end
 
 function gravi_build_p2vm_matrix(profiles,baseline_phasors; baselines=baselines_list)
 	kernel = first(values(profiles)).transmissions[1].basis.kernel
+#	kernel= InterpolationKernels.BSpline{1,Float64}()
 	lk = length(kernel) 
 	tλ,usable_wvlngth = wavelength_range(profiles; baselines=baselines, padding=floor(Int,lk/2))
 	nλ = length(tλ)
@@ -225,26 +227,28 @@ function gravi_build_p2vm_matrix(profiles,baseline_phasors; baselines=baselines_
 		T1,T2 = baseline
 		baseline_wvlngth = mean(hcat((get_wavelength(profiles["$T1$T2-$chnl-C"]) for chnl ∈["A","B","C","D"])...),dims=2)[:]
 		for (j,idx) ∈ enumerate(minwv:maxwv)
-			isfinite(baseline_wvlngth[idx]) || continue
+			λ =  baseline_wvlngth[idx]
+			isfinite(λ) || continue
 			# Interferometry
-			V[c:c+7] .= baseline_phasors[i][idx,:,:][:]
-			C[c:c+7] .= (( j-1)*(6*2+4)) .+ 4 .+ (i-1)*(2) .+ [1,2,1,2,1,2,1,2]
-			L[c:c+7] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ [1,1,2,2,3,3,4,4]
+			trans =  [sqrt(profiles["$T1$T2-$chnl-C"].transmissions[1](λ).*profiles["$T1$T2-$chnl-C"].transmissions[2](λ)) for chnl in ["A","B","C","D"]]
+			V[c:c+7] .= baseline_phasors[i][idx,:,:][:] .* trans[ [1,2,3,4,1,2,3,4] ] .* [1 ,1 ,1 ,1, -1, -1, -1, -1]
+			C[c:c+7] .= (( j-1)*(6*2+4)) .+ 4 .+ (i-1)*(2) .+ [1,1,1,1,2,2,2,2]
+			L[c:c+7] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ [1,2,3,4,1,2,3,4] # [1,1,2,2,3,3,4,4]
 			c = c+8
 			# photometry
-			off,weights = InterpolationKernels.compute_offset_and_weights(kernel, find_index(tλ,baseline_wvlngth[idx]))
+			off,weights = InterpolationKernels.compute_offset_and_weights(kernel, find_index(tλ,λ))
 			off = Int(off)
 			#kλ = view(tλ,off:(off+lk-1))
 			for (k,chnl) ∈enumerate(["A","B","C","D"])
-				trans1 = profiles["$T1$T2-$chnl-C"].transmissions[1](baseline_wvlngth[idx])
-				trans2 = profiles["$T1$T2-$chnl-C"].transmissions[2](baseline_wvlngth[idx])
+				trans1 = profiles["$T1$T2-$chnl-C"].transmissions[1](λ)
+				trans2 = profiles["$T1$T2-$chnl-C"].transmissions[2](λ)
 				#@show size(V[c:(c+lk-1)])
 				#@show size(weights.*trans1)
-				V[c:(c+lk-1)] .= weights.*trans1
+				V[c:(c+lk-1)] .= weights .*trans1
 				C[c:(c+lk-1)] .= (((off:(off+lk-1)).-1).*(6*2+4)) .+ T1
 				L[c:(c+lk-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ k
 				c = c+lk
-				V[c:(c+lk-1)] .= weights.*trans2
+				V[c:(c+lk-1)] .= weights .*trans2
 				C[c:(c+lk-1)] .= (((off:(off+lk-1)).-1).*(6*2+4)) .+ T2
 				L[c:(c+lk-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ k
 				c = c+lk
@@ -253,4 +257,32 @@ function gravi_build_p2vm_matrix(profiles,baseline_phasors; baselines=baselines_
 	end
 	#return V,C,L,c-1,nL,nC, nelement
 	return sparse(L[1:c-1],C[1:c-1],V[1:c-1],nL,nC),tλ,[minwv,maxwv]
+end
+
+
+function make_pixels_vector(data::AbstractWeightedData,
+	profiles::Dict{String,SpectrumModel{A,B, C}},
+	wvidx::Vector{Int}; 
+	baselines=baselines_list, kwds...)  where {A,B,C}
+	
+	nframe = size(data,3)
+	nmeasuredλ = wvidx[2] - wvidx[1]+1					
+	nL = 4*6*nmeasuredλ
+	v = zeros(Float64,nL,nframe)
+	w = zeros(Float64,nL,nframe)
+	for t ∈ axes(data,3)
+		for (i,baseline) ∈ enumerate(baselines)
+			T1,T2 = baseline
+			for (k,chnl) ∈ enumerate(["A","B","C","D"])
+				(;val,precision) = gravi_extract_profile(view(data,:,:,t),profiles["$T1$T2-$chnl-C"]; kwds...) 
+				wvlngth = get_wavelength(profiles["$T1$T2-$chnl-C"])
+				for (j,idx) ∈ enumerate(wvidx[1]:wvidx[2])
+					isfinite(wvlngth[idx]) || isfinite(val[idx]) || continue
+					v[((j-1)*(6*4)) + (i-1)*4 + k,t] = val[idx]
+					w[((j-1)*(6*4)) + (i-1)*4 + k,t] = precision[idx]
+				end
+			end
+		end
+	end
+	return v,w
 end

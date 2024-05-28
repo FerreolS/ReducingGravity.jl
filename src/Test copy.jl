@@ -1,4 +1,4 @@
-using FITSIO,Statistics, ArrayTools,StatsBase
+using FITSIO,Statistics, ArrayTools,StatsBase, LinearAlgebra
 using ReducingGravity
 
 
@@ -44,7 +44,7 @@ fwave = FITS(first(filter(x -> (occursin(r"(WAVE,LAMP)", x.second.type) ), flist
 wave =read(fwave["IMAGING_DATA_SC"]);
 wave,goodpix  = gravi_create_weighteddata(wave,illuminated,goodpix)
 
-profiles = gravi_spectral_calibration(wave,darkwave, profiles; nonnegative=true, robust=true)
+profiles = gravi_spectral_calibration(wave,darkwave, profiles; nonnegative=true, robust=false)
 
 
 
@@ -54,11 +54,12 @@ profiles = gravi_spectral_calibration(wave,darkwave, profiles; nonnegative=true,
 #spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkp2vm, profiles; nonnegative=true, robust=true)
 # TODO To be adapted once the sorted gravi_compute_gain_from_p2vm works
 darkp2vm, gain, rov = gravi_compute_gain_from_p2vm(P2VMwd,profiles,goodpix)
-spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkp2vm,profiles; nonnegative=true, robust=true)
+spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkp2vm,profiles; nonnegative=true, robust=false)
 profiles, lamp = gravi_compute_lamp_transmissions(  spctr, profiles; nb_transmission_knts=40,
 nb_lamp_knts=360)
 
-wd = gravi_create_weighteddata(p2vm, illuminated,goodpix,rov, gain)
+
+#= wd = gravi_create_weighteddata(p2vm, illuminated,goodpix,rov, gain)
 A = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["13-A-C"],lamp)
 B = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["13-B-C"],lamp)
 C = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["13-C-C"],lamp)
@@ -68,8 +69,18 @@ phasors= ReducingGravity.gravi_build_ABCD_phasors(ϕ,A,B,C,D);
 phase = ReducingGravity.estimate_visibility(phasors,A,B,C,D);
 v=phase;
 rho = sqrt.(phase[:,:,1].^2 .+ phase[:,:,2] .^2)
-#rho3 = (ones(360) .* median(rho,dims=1))
-phase .*= 1 ./ rho # .* rho3
+rho3 = (ones(360) .* median(rho[50:200,:],dims=1))
+phase .*= 1 ./ rho  .* rho3
 phasors= ReducingGravity.gravi_build_ABCD_phasors(phase,A,B,C,D);
 phase = ReducingGravity.estimate_visibility(phasors,A,B,C,D);
-sum(abs2,filter(isfinite,(phase.-v)))
+sum(abs2,filter(isfinite,(phase.-v))) 
+ =#
+
+baseline_phasors, baseline_visibilities = gravi_build_p2vm_interf(wd - darkp2vm,profiles,lamp; loop_with_norm=10, loop=2)
+S,tλ,wvidx = ReducingGravity.gravi_build_p2vm_matrix(profiles,baseline_phasors)
+v,w = ReducingGravity.make_pixels_vector(view(p12,:,:,100) - darkflat,profiles,wvidx);
+Cx = pinv(Hermitian(Array(S'*(w.*S))))
+xx = M*S'*(w.*v);
+xx = reshape(xx,6*2+4,:);
+ww = sqrt(Hermitian(Cx))
+stdxx = diag(ww)

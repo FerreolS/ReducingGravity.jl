@@ -67,14 +67,14 @@ P2VMwd = Dict(P2VMwd)
 darkp2vm, gain, rov = gravi_compute_gain_from_p2vm(P2VMwd,profiles,goodpix)
 spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkp2vm,profiles; nonnegative=true, robust=false)
 
-profiles, lamp = gravi_compute_lamp_transmissions(  spctr, profiles)
+profiles, lamp = gravi_compute_lamp_transmissions(  spctr, profiles)#,kernel = InterpolationKernels.BSpline{1}())
 
 #wd = gravi_create_weighteddata(P2VM["P2VM12"], illuminated,goodpix,rov, gain)
-wd = gravi_create_weighteddata(P2VM["P2VM13"], illuminated,goodpix,rov, gain)
-A = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["13-A-C"],lamp)
-B = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["13-B-C"],lamp)
-C = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["13-C-C"],lamp)
-D = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["13-D-C"],lamp)
+wd = gravi_create_weighteddata(P2VM["P2VM12"], illuminated,goodpix,rov, gain)
+A = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["12-A-C"],lamp)
+B = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["12-B-C"],lamp)
+C = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["12-C-C"],lamp)
+D = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["12-D-C"],lamp)
 ϕ = ReducingGravity.gravi_initial_input_phase(A,B,C,D)
 phasors= ReducingGravity.gravi_build_ABCD_phasors(ϕ,A,B,C,D);
 phase = ReducingGravity.estimate_visibility(phasors,A,B,C,D);
