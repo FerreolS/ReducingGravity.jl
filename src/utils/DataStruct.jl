@@ -7,7 +7,7 @@ struct InterpolatedSpectrum{B}
 	basis::B
 end
 
-(self::InterpolatedSpectrum{B})(x) where B<:BSplineBasis = Spline(self.basis,self.coefs)(x)
+#(self::InterpolatedSpectrum{B})(x) where B<:BSplineBasis = Spline(self.basis,self.coefs)(x)
 #(self::InterpolatedSpectrum{B})() where B<:BSplineBasis = Spline(self.basis,self.coefs)
 
 function (self::InterpolatedSpectrum{B})(x) where B<:Interpolator
