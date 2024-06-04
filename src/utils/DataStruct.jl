@@ -26,6 +26,8 @@ end
 function (self::InterpolatedSpectrum{B})(x::Number) where B<:Interpolator
 	!isfinite(x) && return x 
 	(;knots, kernel) = self.basis
+	x = min(x,knots[end])
+	x = max(x,knots[1])
 	basis = build_interpolation_matrix(kernel,knots,x)
 	return (basis*self.coefs)[1]
 end

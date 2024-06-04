@@ -2,7 +2,8 @@ using FITSIO,Statistics, ArrayTools,StatsBase, LinearAlgebra
 using ReducingGravity
 
 
-dirpath = "/Users/ferreol/Data/Gravity+/2020-01-06_MEDIUM_COMBINED/"
+#dirpath = "/Users/ferreol/Data/Gravity+/2020-01-06_MEDIUM_COMBINED/"
+dirpath = "/Users/ferreol/Data/Gravity+/2020-03-09_MEDIUM_COMBINED/"
 flist = ReducingGravity.listfitsfiles(dirpath);
 
 # Illumination size estimation
@@ -59,8 +60,11 @@ profiles, lamp = gravi_compute_lamp_transmissions(  spctr, profiles; nb_transmis
 nb_lamp_knts=360)
 
 
-#= wd = gravi_create_weighteddata(p2vm, illuminated,goodpix,rov, gain)
-A = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["13-A-C"],lamp)
+wd = gravi_create_weighteddata(p2vm, illuminated,goodpix,rov, gain)
+baseline_phasors, baseline_visibilities = gravi_build_p2vm_interf(wd - darkp2vm,profiles,lamp; loop_with_norm=10, loop=2)
+S,tλ,λbaseline,wvidx = ReducingGravity.gravi_build_p2vm_matrix(profiles,baseline_phasors)
+
+#=A  = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["13-A-C"],lamp)
 B = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["13-B-C"],lamp)
 C = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["13-C-C"],lamp)
 D = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["13-D-C"],lamp)
@@ -76,11 +80,33 @@ phase = ReducingGravity.estimate_visibility(phasors,A,B,C,D);
 sum(abs2,filter(isfinite,(phase.-v))) 
  =#
 
-baseline_phasors, baseline_visibilities = gravi_build_p2vm_interf(wd - darkp2vm,profiles,lamp; loop_with_norm=10, loop=2)
-S,tλ,wvidx = ReducingGravity.gravi_build_p2vm_matrix(profiles,baseline_phasors)
+ if false
+
+#S2,tλ,λbaseline,wvidx = ReducingGravity.gravi_build_p2vm_matrix(profiles,baseline_phasors; λmin=2e-6,λmax=2.5e-6);
+p12 = gravi_create_weighteddata(P2VM["P2VM12"], illuminated,goodpix,rov, gain)
 v,w = ReducingGravity.make_pixels_vector(view(p12,:,:,100) - darkflat,profiles,wvidx);
 Cx = pinv(Hermitian(Array(S'*(w.*S))))
-xx = M*S'*(w.*v);
+xx = Cx*S'*(w.*v);
 xx = reshape(xx,6*2+4,:);
 ww = sqrt(Hermitian(Cx))
 stdxx = diag(ww)
+
+using KrylovKit
+A = Hermitian((S'*(w.*S)))
+b = S'*(w.*v);
+xx,info= KrylovKit.linsolve(A,b[:]; ishermitian=true, maxiter=100,atol=1e-3);
+
+
+fdark3 = read(FITS(first(filter(x -> (occursin(r"(DARK)", x.second.type) && x.second.Δt==3.0), flist)).first)["IMAGING_DATA_SC"]);
+goodpix3 = gravi_compute_badpix(fdark3,illuminated, spatialkernel=(11,1))
+dark3,goodpix = gravi_create_weighteddata(fdark3,illuminated,goodpix3.&&goodpix; filterblink=true, blinkkernel=(1,1,9),keepbias=true)
+
+
+sky3 = read(FITS(first(filter(x -> (occursin(r"(SKY)", x.second.type) && x.second.Δt==3.0), flist)).first)["IMAGING_DATA_SC"]);
+goodpix3 = gravi_compute_badpix(sky3,illuminated, spatialkernel=(11,1))
+sky3,goodpix = gravi_create_weighteddata(sky3,illuminated,goodpix3.&&goodpix; filterblink=true, blinkkernel=(1,1,5),keepbias=true)
+
+object3 = read(FITS(first(filter(x -> (occursin(r"(OBJECT)", x.second.type) && x.second.Δt==3.0), flist)).first)["IMAGING_DATA_SC"]);
+object3 = gravi_create_weighteddata(object3,illuminated, goodpix, rov, gain)
+
+ end

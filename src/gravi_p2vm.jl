@@ -184,31 +184,42 @@ function gravi_build_p2vm_interf(p2vm_data,profiles,lamp;loop_with_norm=5,loop=5
 	return baseline_phasors, baseline_visibilities
 end
 
-function wavelength_range(profiles::Dict{String,SpectrumModel{A,B, C}}; baselines=baselines_list,padding=0) where  {A,B,C}
+function wavelength_range(profiles::Dict{String,SpectrumModel{A,B, C}}; baselines=baselines_list,padding=0, λmin=0,λmax=1) where  {A,B,C}
 	λstep = minimum([mean(diff(ReducingGravity.get_wavelength(p; bnd=false))) for p ∈ values(profiles)])
-	λmin = 1
-	λmax = 0
+	wvmin = 1
+	wvmax = 0
+
+	for (i,baseline) ∈ enumerate(baselines)
+		T1,T2 = baseline
+
+		wvmin = max(λmin,min(wvmin,minimum([profiles["$T1$T2-$chnl-C"].λbnd[1] for chnl ∈["A","B","C","D"]])))
+		wvmax = min(λmax,max(wvmax,maximum([profiles["$T1$T2-$chnl-C"].λbnd[2] for chnl ∈["A","B","C","D"]])))
+	end
+
 
 	usable_wvlngth = zeros(Int,2,6)
 	for (i,baseline) ∈ enumerate(baselines)
 		T1,T2 = baseline
 		baseline_wvlngth = mean(hcat((get_wavelength(profiles["$T1$T2-$chnl-C"]) for chnl ∈["A","B","C","D"])...),dims=2)[:]
-		fidx = findfirst(isfinite,baseline_wvlngth)
-		lidx = findlast(isfinite,baseline_wvlngth)
+		fidx = findfirst(x->isfinite(x) && x>=wvmin,baseline_wvlngth)
+		lidx = findlast(x->isfinite(x) && x<=wvmax,baseline_wvlngth)
 		usable_wvlngth[:,i] .= [fidx,lidx]
 
-		λmin = min(λmin,minimum([profiles["$T1$T2-$chnl-C"].λbnd[1] for chnl ∈["A","B","C","D"]]))
-		λmax = max(λmax,maximum([profiles["$T1$T2-$chnl-C"].λbnd[2] for chnl ∈["A","B","C","D"]]))
 	end
 
-	return range(λmin - padding * λstep,λmax + padding * λstep; step = λstep), usable_wvlngth
+	return range(wvmin - padding * λstep,wvmax  +padding *  λstep; step = λstep), usable_wvlngth
 end
 
-function gravi_build_p2vm_matrix(profiles,baseline_phasors; baselines=baselines_list)
-	kernel = first(values(profiles)).transmissions[1].basis.kernel
-#	kernel= InterpolationKernels.BSpline{1,Float64}()
+function gravi_build_p2vm_matrix(	profiles,
+									baseline_phasors; 
+									baselines=baselines_list,
+									λmin=0.0,λmax=1.0,
+									kernel = first(values(profiles)).transmissions[1].basis.kernel)
+
+	λbaseline = Vector{Vector{Float64}}(undef,6)
+	
 	lk = length(kernel) 
-	tλ,usable_wvlngth = wavelength_range(profiles; baselines=baselines, padding=floor(Int,lk/2))
+	tλ,usable_wvlngth = wavelength_range(profiles; baselines=baselines, padding=lk,λmin=λmin,λmax=λmax)
 	nλ = length(tλ)
 
 	minwv = minimum(usable_wvlngth)
@@ -226,37 +237,65 @@ function gravi_build_p2vm_matrix(profiles,baseline_phasors; baselines=baselines_
 	for (i,baseline) ∈ enumerate(baselines)
 		T1,T2 = baseline
 		baseline_wvlngth = mean(hcat((get_wavelength(profiles["$T1$T2-$chnl-C"]) for chnl ∈["A","B","C","D"])...),dims=2)[:]
+		λbaseline[i] = baseline_wvlngth[minwv-lk:maxwv+lk]
 		for (j,idx) ∈ enumerate(minwv:maxwv)
 			λ =  baseline_wvlngth[idx]
 			isfinite(λ) || continue
+			λidx = 	find_index(tλ,λ)
+			λidx > 1 || continue
 			# Interferometry
 			trans =  [sqrt(profiles["$T1$T2-$chnl-C"].transmissions[1](λ).*profiles["$T1$T2-$chnl-C"].transmissions[2](λ)) for chnl in ["A","B","C","D"]]
-			V[c:c+7] .= baseline_phasors[i][idx,:,:][:] .* trans[ [1,2,3,4,1,2,3,4] ] .* [1 ,1 ,1 ,1, -1, -1, -1, -1]
-			C[c:c+7] .= (( j-1)*(6*2+4)) .+ 4 .+ (i-1)*(2) .+ [1,1,1,1,2,2,2,2]
+			V[c:c+7] .= baseline_phasors[i][idx,:,:][:] .* trans[ [1,2,3,4,1,2,3,4] ] #.* [1 ,1 ,1 ,1, -1, -1, -1, -1]
+			C[c:c+7] .= (( round(Int,λidx)-1)*(6*2+4)) .+ 4 .+ (i-1)*(2) .+ [1,1,1,1,2,2,2,2]
 			L[c:c+7] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ [1,2,3,4,1,2,3,4] # [1,1,2,2,3,3,4,4]
 			c = c+8
 			# photometry
-			off,weights = InterpolationKernels.compute_offset_and_weights(kernel, find_index(tλ,λ))
+			off,weights = InterpolationKernels.compute_offset_and_weights(kernel, λidx)
+			
 			off = Int(off)
+			mx = off + lk
+			wsz = lk
+			if off < 0 
+				weights = weights[(1 - off):end]
+				off = 0			
+				weights = (sw=sum(weights))==0 ? weights : weights./sw
+				wsz = length(weights)
+			elseif (off+lk) > nC
+				mx = min(off + lk, nC )
+				weights = weights[1:(mx-off)] 
+				weights = (sw=sum(weights))==0 ? weights : weights./sw
+				wsz = length(weights)
+			end
 			#kλ = view(tλ,off:(off+lk-1))
 			for (k,chnl) ∈enumerate(["A","B","C","D"])
 				trans1 = profiles["$T1$T2-$chnl-C"].transmissions[1](λ)
 				trans2 = profiles["$T1$T2-$chnl-C"].transmissions[2](λ)
 				#@show size(V[c:(c+lk-1)])
 				#@show size(weights.*trans1)
-				V[c:(c+lk-1)] .= weights .*trans1
-				C[c:(c+lk-1)] .= (((off:(off+lk-1)).-1).*(6*2+4)) .+ T1
-				L[c:(c+lk-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ k
-				c = c+lk
-				V[c:(c+lk-1)] .= weights .*trans2
-				C[c:(c+lk-1)] .= (((off:(off+lk-1)).-1).*(6*2+4)) .+ T2
-				L[c:(c+lk-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ k
-				c = c+lk
-			end
+				V[c:(c+wsz-1)] .= weights .*trans1
+				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ T1
+				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ k
+				c = c+wsz
+				V[c:(c+wsz-1)] .= weights .*trans2
+				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ T2
+				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ k
+				c = c+wsz
+			end 
 		end
 	end
-	#return V,C,L,c-1,nL,nC, nelement
-	return sparse(L[1:c-1],C[1:c-1],V[1:c-1],nL,nC),tλ,[minwv,maxwv]
+#	return V,C,L,c-1,nL,nC, nelement
+#= 	L = L[1:c-1]
+	C = C[1:c-1]
+	V = V[1:c-1]
+	minC = minimum(C)
+	maxC = maximum(C)
+	minL = minimum(L)
+	maxL = maximum(L)
+	@. L = L - minL+1
+	@. C = C - minC+1
+	nC = maxC - minC +1
+	nL = maxL - minL +1 =#
+	return sparse(L[1:c-1],C[1:c-1],V[1:c-1],nL,nC),tλ[:],λbaseline,[minwv,maxwv]
 end
 
 
@@ -285,4 +324,22 @@ function make_pixels_vector(data::AbstractWeightedData,
 		end
 	end
 	return v,w
+end
+
+function extract_correlated_flux(x::AbstractArray{T,N},tλ, λbaselines,kernel;baselines=baselines_list) where {T,N}
+	if N ==1 || size(x,2) ==1
+		x = reshape(x,6*2+4,:);
+	end
+	B = ReducingGravity.Interpolator(tλ,kernel)
+
+	photometric= [InterpolatedSpectrum(x[i,:],B) for i∈1:4]
+	interferometric = Vector{Vector{ComplexF64}}(undef,6)
+	
+	for (i,baseline) ∈ enumerate(baselines)
+		T1,T2 = baseline
+		tel1 = photometric[T1].(λbaselines[i])
+		tel2 = photometric[T2].(λbaselines[i])
+		interferometric[i] = (x[4+2*(i-1)+1,:] .+ 1im .* x[4+2*(i-1)+2,:])  ./ sqrt.(max.(0., tel1 .* tel2))./2
+	end
+	return photometric,interferometric
 end
