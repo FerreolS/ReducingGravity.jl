@@ -2,8 +2,8 @@ using FITSIO,Statistics, ArrayTools,StatsBase, LinearAlgebra
 using ReducingGravity
 
 
-#dirpath = "/Users/ferreol/Data/Gravity+/2020-01-06_MEDIUM_COMBINED/"
-dirpath = "/Users/ferreol/Data/Gravity+/2020-03-09_MEDIUM_COMBINED/"
+dirpath = "/Users/ferreol/Data/Gravity+/2020-01-06_MEDIUM_COMBINED/"
+#dirpath = "/Users/ferreol/Data/Gravity+/2020-03-09_MEDIUM_COMBINED/"
 flist = ReducingGravity.listfitsfiles(dirpath);
 
 # Illumination size estimation
@@ -107,6 +107,6 @@ goodpix3 = gravi_compute_badpix(sky3,illuminated, spatialkernel=(11,1))
 sky3,goodpix = gravi_create_weighteddata(sky3,illuminated,goodpix3.&&goodpix; filterblink=true, blinkkernel=(1,1,5),keepbias=true)
 
 object3 = read(FITS(first(filter(x -> (occursin(r"(OBJECT)", x.second.type) && x.second.Δt==3.0), flist)).first)["IMAGING_DATA_SC"]);
-object3 = gravi_create_weighteddata(object3,illuminated, goodpix, rov, gain)
+object3 = gravi_create_weighteddata(object3,illuminated, goodpix3.&&goodpix, rov, gain)
 
  end

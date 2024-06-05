@@ -184,7 +184,11 @@ function gravi_build_p2vm_interf(p2vm_data,profiles,lamp;loop_with_norm=5,loop=5
 	return baseline_phasors, baseline_visibilities
 end
 
-function wavelength_range(profiles::Dict{String,SpectrumModel{A,B, C}}; baselines=baselines_list,padding=0, λmin=0,λmax=1) where  {A,B,C}
+function wavelength_range(profiles::Dict{String,SpectrumModel{A,B, C}}; 
+							baselines=baselines_list,
+							padding=0, 
+							λmin=0,
+							λmax=1) where  {A,B,C}
 	λstep = minimum([mean(diff(ReducingGravity.get_wavelength(p; bnd=false))) for p ∈ values(profiles)])
 	wvmin = 1
 	wvmax = 0
@@ -196,18 +200,27 @@ function wavelength_range(profiles::Dict{String,SpectrumModel{A,B, C}}; baseline
 		wvmax = min(λmax,max(wvmax,maximum([profiles["$T1$T2-$chnl-C"].λbnd[2] for chnl ∈["A","B","C","D"]])))
 	end
 
+	usable_wvlngth = get_selected_wavelenght(profiles,baselines=baselines,λmin=wvmin,λmax=wvmax)
 
+
+	return range(wvmin - padding * λstep,wvmax  +padding *  λstep; step = λstep), usable_wvlngth
+end
+
+function get_selected_wavelenght(profiles::Dict{String,SpectrumModel{A,B, C}}; 
+								baselines=baselines_list,
+								λmin=0,
+								λmax=1) where  {A,B,C}
+	
 	usable_wvlngth = zeros(Int,2,6)
 	for (i,baseline) ∈ enumerate(baselines)
 		T1,T2 = baseline
 		baseline_wvlngth = mean(hcat((get_wavelength(profiles["$T1$T2-$chnl-C"]) for chnl ∈["A","B","C","D"])...),dims=2)[:]
-		fidx = findfirst(x->isfinite(x) && x>=wvmin,baseline_wvlngth)
-		lidx = findlast(x->isfinite(x) && x<=wvmax,baseline_wvlngth)
+		fidx = findfirst(x->isfinite(x) && x>=λmin,baseline_wvlngth)
+		lidx = findlast(x->isfinite(x) && x<=λmax,baseline_wvlngth)
 		usable_wvlngth[:,i] .= [fidx,lidx]
 
 	end
-
-	return range(wvmin - padding * λstep,wvmax  +padding *  λstep; step = λstep), usable_wvlngth
+	return usable_wvlngth
 end
 
 function gravi_build_p2vm_matrix(	profiles,
@@ -323,7 +336,7 @@ function make_pixels_vector(data::AbstractWeightedData,
 			end
 		end
 	end
-	return v,w
+	return WeightedData(v,w)
 end
 
 function extract_correlated_flux(x::AbstractArray{T,N},tλ, λbaselines,kernel;baselines=baselines_list) where {T,N}
@@ -342,4 +355,126 @@ function extract_correlated_flux(x::AbstractArray{T,N},tλ, λbaselines,kernel;b
 		interferometric[i] = (x[4+2*(i-1)+1,:] .+ 1im .* x[4+2*(i-1)+2,:])  ./ sqrt.(max.(0., tel1 .* tel2))./2
 	end
 	return photometric,interferometric
+end
+
+
+
+
+function gravi_build_p2vm_matrix_interp(	profiles,
+									baseline_phasors; 
+									baselines=baselines_list,
+									λsampling=nothing,
+									λmin=0.0,λmax=1.0,
+									kernel = first(values(profiles)).transmissions[1].basis.kernel)
+	
+	lk = length(kernel) 
+	if isnothing(λsampling)
+		λsampling,usable_wvlngth = wavelength_range(profiles; baselines=baselines, padding=lk,λmin=λmin,λmax=λmax)
+		λmin = min(minimum(λsampling),λmin)
+		λmax = min(minimum(λsampling),λmax)
+	else
+		λmin = min(minimum(λsampling),λmin)
+		λmax = min(minimum(λsampling),λmax)
+		usable_wvlngth = get_selected_wavelenght(profiles,baselines=baselines,λmin=λmin,λmax=λmax)
+	end
+	nλ = length(λsampling)
+
+	minwv = minimum(usable_wvlngth)
+	maxwv = maximum(usable_wvlngth)
+	nmeasuredλ = maxwv - minwv + 1
+
+	nL = 4*6*nmeasuredλ
+	nC = (4+6*2)*nλ
+	nelement = 4*6*(2*6+2)*nmeasuredλ+(4*6*2)*nmeasuredλ*(lk-1)
+	L = zeros(Int,nelement)
+	C = zeros(Int,nelement)
+	V = zeros(Float64,nelement)
+	c = 1
+
+	for (i,baseline) ∈ enumerate(baselines)
+		T1,T2 = baseline
+		for  (ci,chnl) ∈ enumerate(["A","B","C","D"])
+			wvlngth = get_wavelength(profiles["$T1$T2-$chnl-C"])[:]
+			for (j,idx) ∈ enumerate(minwv:maxwv)
+				λ =  wvlngth[idx]
+				isfinite(λ) || continue
+				λidx = 	find_index(λsampling,λ)
+				λidx > 1 || continue
+				# weights
+				off,weights = InterpolationKernels.compute_offset_and_weights(kernel, λidx)
+				off = Int(off)
+				mx = off + lk
+				wsz = lk
+				if off < 0 
+					weights = weights[(1 - off):end]
+					off = 0			
+					weights = (sw=sum(weights))==0 ? weights : weights./sw
+					wsz = length(weights)
+				elseif (off+lk) > nC
+					mx = min(off + lk, nC )
+					weights = weights[1:(mx-off)] 
+					weights = (sw=sum(weights))==0 ? weights : weights./sw
+					wsz = length(weights)
+				end
+
+				trans1 = profiles["$T1$T2-$chnl-C"].transmissions[1](λ)
+				trans2 = profiles["$T1$T2-$chnl-C"].transmissions[2](λ)
+
+				# Interferometry
+				trans =  weights.*sqrt(trans1*trans2) 
+				#Real
+				V[c:(c+wsz-1)] .= baseline_phasors[i][idx,ci,1] .* trans 
+				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ 4 .+ (i-1)*(2) .+ 1
+				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
+				c = c+wsz
+				#Im
+				V[c:(c+wsz-1)] .= baseline_phasors[i][idx,ci,2] .* trans 
+				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ 4 .+ (i-1)*(2) .+ 2
+				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
+				c = c+wsz
+				# photometry
+				off,weights = InterpolationKernels.compute_offset_and_weights(kernel, λidx)
+			
+				V[c:(c+wsz-1)] .= weights .*trans1
+				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ T1
+				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
+				c = c+wsz
+				V[c:(c+wsz-1)] .= weights .*trans2
+				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ T2
+				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
+				c = c+wsz
+			end 
+		end
+	end
+#	return V,C,L,c-1,nL,nC, nelement
+#= 	L = L[1:c-1]
+	C = C[1:c-1]
+	V = V[1:c-1]
+	minC = minimum(C)
+	maxC = maximum(C)
+	minL = minimum(L)
+	maxL = maximum(L)
+	@. L = L - minL+1
+	@. C = C - minC+1
+	nC = maxC - minC +1
+	nL = maxL - minL +1 =#
+	return sparse(L[1:c-1],C[1:c-1],V[1:c-1],nL,nC),λsampling[:],[minwv,maxwv]
+end
+
+
+function  get_correlatedflux(V2PM::AbstractMatrix{T},	
+								(;val, precision)::AbstractWeightedData{T,2};
+								matrix_inversion=false,
+								kwds...) where {T}
+		
+	nframe = size(val,2)
+	nrow = size(V2PM,2) ÷ (6*2+4)
+	output = zeros(T,6*2+4,nrow,nframe)
+	Threads.@threads for t ∈ axes(val,2)
+		A = Hermitian((V2PM'*(view(precision,:,t).*V2PM)))
+		b = V2PM'*(view(precision,:,t) .* view(val,:,t))[:]	
+		x,info= KrylovKit.linsolve(A,b; issymmetric=true,kwds...)
+		view(output,:,:,t)[:] .= x[:] 
+	end
+	return output
 end
