@@ -130,7 +130,7 @@ function gravi_extract_profile(	data::AbstractWeightedData{T,N},
 end
 
 function gravi_extract_profile(	data::AbstractWeightedData{T,N},	
-								profile::Dict{String,<:SpectrumModel}; 
+								profile::AbstractDict; 
 								kwds...) where {T,N}
 	profiles = Dict{String,ConcreteWeightedData{Float64,1}}()
 	for (key,val) ∈ profile
@@ -140,7 +140,7 @@ function gravi_extract_profile(	data::AbstractWeightedData{T,N},
 end
 
 function gravi_extract_profile_flats(	flats::Vector{<:AbstractWeightedData{T,N}},
-										profile::Dict{String,<:SpectrumModel}; 
+										profile::AbstractDict; 
 										kwds...) where {T,N}
 	spctr = Dict{String,AbstractWeightedData{Float64,1}}()
 	Threads.@threads for tel1 ∈ 1:4
@@ -159,7 +159,7 @@ end
 
 function gravi_extract_profile(	data::AbstractArray{T,N},
 								precision::Union{BitMatrix,AbstractArray{T,N}},
-								profile::Dict{String,<:SpectrumModel}; 
+								profile::AbstractDict; 
 								kwds...) where {T,N}
 	profiles = Dict{String,AbstractWeightedData{T,1}}()
 	for (key,val) ∈ profile

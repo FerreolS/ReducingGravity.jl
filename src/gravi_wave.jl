@@ -20,10 +20,10 @@ function gaussian_lines(rng;center=[0.0],σ=[1.0],amplitude=[1.0])
 end
 
 function gravi_spectral_calibration(      wave::AbstractWeightedData{T,1}, 
-                                          profile::SpectrumModel{A,Nothing,Nothing}; 
+                                          profile::SpectrumModel{A,Nothing,Nothing,D}; 
                                           lines=argon[:,1], 
                                           guess=argon[:,2],
-                                          λorder=3)  where {A,T}
+                                          λorder=3)  where {A,T,D}
 
 
        P = hcat( ((lines .* 1e6).^n for n=0:λorder)...)
@@ -48,7 +48,7 @@ function loss(data::AbstractWeightedData{T,1}, prσ::AbstractVector,P::AbstractM
 end
 
 
-function add_spectral_law(s::SpectrumModel{A,Nothing,B},λcoefs::C) where {A,B,C}
+function add_spectral_law(s::SpectrumModel{A,Nothing,B,D},λcoefs::C) where {A,B,C,D}
 	p = s.bbox.indices[1]
 	λdeg = length(λcoefs)
  	λ = p .^(0:(λdeg-1))'* λcoefs
@@ -61,5 +61,5 @@ function add_spectral_law(s::SpectrumModel{A,Nothing,B},λcoefs::C) where {A,B,C
 	P = (λ).^(0:(σdeg-1))'
 	sgm = get_width(s)
 	new_σ = inv(P'*P)*P'* sgm
-	SpectrumModel(new_center,new_σ,λcoefs,[0.,+Inf],Vector{InterpolatedSpectrum{Nothing}}(),ones(Float64,size(s.bbox,1)),s.bbox)
+	return SpectrumModel(new_center,new_σ,λcoefs,[0.,+Inf],Vector{InterpolatedSpectrum{Nothing}}(),1.0,s.bbox)
 end

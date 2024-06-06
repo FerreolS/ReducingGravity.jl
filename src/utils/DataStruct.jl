@@ -44,17 +44,17 @@ end
  =#
 
 
-struct SpectrumModel{A,B,C}
+struct SpectrumModel{A,B,C,D}
 	center::Vector{Float64}
 	σ::Vector{Float64}
 	λ::B
 	λbnd::Vector{Float64}
 	transmissions::Vector{InterpolatedSpectrum{C}}
-	flat::Vector{Float64}
+	flat::D
 	bbox::A
 end
 
-function ((;center,σ)::SpectrumModel{A,Nothing,B})(p) where {A,B}
+function ((;center,σ)::SpectrumModel{A,Nothing,B,D})(p) where {A,B,D}
 	cdeg = length(center)
 	cp =  p .^(0:(cdeg-1))'* center
 	σdeg = length(σ)
@@ -64,7 +64,7 @@ function ((;center,σ)::SpectrumModel{A,Nothing,B})(p) where {A,B}
 	return (;center=cp[1],σ=σp[1])#,λ=λp[1])
 end
 
-function get_center(s::SpectrumModel{A,B,C}) where {A,B,C}
+function get_center(s::SpectrumModel{A,B,C,D}) where {A,B,C,D}
 	(;center,bbox) = s 
  	if C == Nothing
 		p = bbox.indices[1]
@@ -82,7 +82,7 @@ function get_width((;σ,bbox)::SpectrumModel)
 end
 
 
-get_wavelength(::SpectrumModel{A,Nothing,B},kwds...) where {A,B} = nothing
+get_wavelength(::SpectrumModel{A,Nothing,B,D},kwds...) where {A,B,D} = nothing
 
 function get_wavelength((;λ)::SpectrumModel,p;kwds...)
 	λdeg = length(λ)
@@ -139,7 +139,7 @@ function (self::ProfileModel{A1,P})(;center=[0.0],σ=[1.0],amplitude=[1.0]) wher
 	return ampy .* exp.(-1 ./ 2 .*((cy .- ay')./ sy).^2)
 end
 
-(self::ProfileModel)((;center,σ)::SpectrumModel{A,Nothing,B}) where {A,B} = self(;center=center, σ=σ)
+(self::ProfileModel)((;center,σ)::SpectrumModel{A,Nothing,B,D}) where {A,B,D} = self(;center=center, σ=σ)
 
 function get_profile(profile::SpectrumModel) 
 	(;center,σ) = profile
@@ -158,10 +158,10 @@ function get_profile(profile::SpectrumModel)
 end
 
 
-function get_profile(s::SpectrumModel{A,Nothing,B}) where {A,B}
+function get_profile(s::SpectrumModel{A,Nothing,B,D}) where {A,B,D}
 	ProfileModel(s.bbox)(;s.center,s.σ)
 end
 
-function get_profile(s::SpectrumModel{A,Nothing,B},bndbox) where {A,B}
+function get_profile(s::SpectrumModel{A,Nothing,B,D},bndbox) where {A,B,D}
 	ProfileModel(bndbox)(;s.center,s.σ)
 end

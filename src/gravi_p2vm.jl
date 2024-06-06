@@ -1,31 +1,5 @@
 const baselines_list =[[1,2],[1,3],[4,1],[2,3],[4,2],[4,3]]
 
-function gravi_create_single_baseline(	tel1::Int,
-										tel2::Int,
-										data::AbstractWeightedData{T,N},
-										dark::AbstractWeightedData,
-										lamp::AbstractVector,
-										profiles::SpectrumModel) where {T,N}
-
-	extracted_spectra = Dict{String,Vector{WeightedData{Float64,1, Vector{Float64}, Vector{Float64}}}}()
-	for (key,profile) ∈ profiles
-		push!(extracted_spectra,key=>[gravi_extract_profile(view(data,:,:,frame) - dark,profile) for frame ∈ axes(data,3)])
-	end
-	return extracted_spectra
-
-	ABCD = ConcreteWeightedData{T,N}
-	for (key,profile) ∈ profiles
-		if (tel1 == key[1]) && (tel2 == key[2])
-			continue
-		end
-		key1 = "$tel1-$key" 
-		key2 = "$tel2-$key" 
-	end
-	for chnl ∈ ["A","B","C","D"]
-		profiles["$tel1$tel2-$chnl-C"]
-	end	
-end
-
 
 function  gravi_extract_channel(data::AbstractWeightedData,
 								profile::SpectrumModel,
@@ -184,11 +158,11 @@ function gravi_build_p2vm_interf(p2vm_data,profiles,lamp;loop_with_norm=5,loop=5
 	return baseline_phasors, baseline_visibilities
 end
 
-function wavelength_range(profiles::Dict{String,SpectrumModel{A,B, C}}; 
+function wavelength_range(profiles; 
 							baselines=baselines_list,
 							padding=0, 
 							λmin=0,
-							λmax=1) where  {A,B,C}
+							λmax=1) 
 	λstep = minimum([mean(diff(ReducingGravity.get_wavelength(p; bnd=false))) for p ∈ values(profiles)])
 	wvmin = 1
 	wvmax = 0
@@ -206,10 +180,10 @@ function wavelength_range(profiles::Dict{String,SpectrumModel{A,B, C}};
 	return range(wvmin - padding * λstep,wvmax  +padding *  λstep; step = λstep), usable_wvlngth
 end
 
-function get_selected_wavelenght(profiles::Dict{String,SpectrumModel{A,B, C}}; 
+function get_selected_wavelenght(profiles; 
 								baselines=baselines_list,
 								λmin=0,
-								λmax=1) where  {A,B,C}
+								λmax=1) 
 	
 	usable_wvlngth = zeros(Int,2,6)
 	for (i,baseline) ∈ enumerate(baselines)
@@ -313,9 +287,9 @@ end
 
 
 function make_pixels_vector(data::AbstractWeightedData,
-	profiles::Dict{String,SpectrumModel{A,B, C}},
-	wvidx::Vector{Int}; 
-	baselines=baselines_list, kwds...)  where {A,B,C}
+							profiles::AbstractDict,
+							wvidx::Vector{Int}; 
+							baselines=baselines_list, kwds...)  
 	
 	nframe = size(data,3)
 	nmeasuredλ = wvidx[2] - wvidx[1]+1					
@@ -339,7 +313,11 @@ function make_pixels_vector(data::AbstractWeightedData,
 	return WeightedData(v,w)
 end
 
-function extract_correlated_flux(x::AbstractArray{T,N},tλ, λbaselines,kernel;baselines=baselines_list) where {T,N}
+function extract_correlated_flux(x::AbstractArray{T,N},
+								tλ, 
+								λbaselines,
+								kernel;
+								baselines=baselines_list) where {T,N}
 	if N ==1 || size(x,2) ==1
 		x = reshape(x,6*2+4,:);
 	end
@@ -360,7 +338,7 @@ end
 
 
 
-function gravi_build_p2vm_matrix_interp(	profiles,
+function gravi_build_p2vm_matrix_interp(	profiles::AbstractDict,
 									baseline_phasors; 
 									baselines=baselines_list,
 									λsampling=nothing,

@@ -242,7 +242,7 @@ function gravi_compute_profile(	flats::Vector{ConcreteWeightedData{T,N}},
 								center_degree=4, 
 								σ_degree=4, 
 								thrsld=0.1) where {T,N,C}
-	profile = Dict{String,SpectrumModel{C,Nothing,Nothing}}()
+	profile = Dict{String,SpectrumModel{C,Nothing,Nothing,Float64}}()
 	#profile = Dict{String,SpectrumModel}()
 	Threads.@threads for tel1 ∈ 1:4
 		for tel2 ∈ 1:4
@@ -252,7 +252,7 @@ function gravi_compute_profile(	flats::Vector{ConcreteWeightedData{T,N}},
 				haskey(bboxes,"$tel1$tel2-$chnl-C") || continue
 				bndbx =bboxes["$tel1$tel2-$chnl-C"] 
  				θ = fitprofile(flatsum,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld )
-				p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{InterpolatedSpectrum{Nothing}}(),ones(Float64,size(bndbx,1)),bndbx)
+				p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{InterpolatedSpectrum{Nothing}}(),1.0,bndbx)
 				push!(profile,"$tel1$tel2-$chnl-C"=>p) 
 			end
 		end
@@ -265,7 +265,7 @@ function gravi_compute_profile(	flats::ConcreteWeightedData{T,N},
 								center_degree=4, 
 								σ_degree=4, 
 								thrsld=0.1) where {T,N,C}
-	profile = Dict{String,SpectrumModel{C,Nothing,Nothing}}()
+	profile = Dict{String,SpectrumModel{C,Nothing,Nothing,Float64}}()
 	#profile = Dict{String,SpectrumModel}()
 	Threads.@threads for tel1 ∈ 1:4
 		for tel2 ∈ 1:4
@@ -274,7 +274,7 @@ function gravi_compute_profile(	flats::ConcreteWeightedData{T,N},
 				haskey(bboxes,"$tel1$tel2-$chnl-C") || continue
 				bndbx =bboxes["$tel1$tel2-$chnl-C"] 
  				θ = fitprofile(flats,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld )
-				p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{InterpolatedSpectrum{Nothing}}(),ones(Float64,size(bndbx,1)),bndbx)
+				p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{InterpolatedSpectrum{Nothing}}(),1.0,bndbx)
 				push!(profile,"$tel1$tel2-$chnl-C"=>p) 
 			end
 		end
@@ -283,12 +283,12 @@ function gravi_compute_profile(	flats::ConcreteWeightedData{T,N},
 end
 
 function gravi_compute_lamp_transmissions(	spectra::Dict{String, ConcreteWeightedData{T,N}},
-										profiles::Dict{String,SpectrumModel{A,B,C}};
+										profiles::Dict{String,SpectrumModel{A,B,C,D}};
 										lamp = nothing,
 										loop=5,
 										nb_transmission_knts=20,
 										nb_lamp_knts=400,									
-										kwds...) where {T,N,A,B,C} 
+										kwds...) where {T,N,A,B,C,D} 
 
 	profiles = gravi_compute_wavelength_bounds(spectra,profiles)
 	if C==Nothing
@@ -308,14 +308,14 @@ end
 
 function gravi_spectral_calibration(	wave::AbstractWeightedData{T, 2},
 										darkwave::AbstractWeightedData{T, 2}, 
-										profiles::Dict{String,SpectrumModel{A,B, C}}; 
+										profiles::Dict{String,SpectrumModel{A,B, C,D}}; 
 										lines=argon[:,1],
 										guess=argon[:,2],
 										λorder=3,
-										kwds...) where {A,B,C,T}
+										kwds...) where {A,B,C,T,D}
 
 	wav = gravi_extract_profile(wave - darkwave, profiles;kwds...)
-	new_profiles = Dict{String,SpectrumModel{A,Vector{Float64}, C}}()
+	new_profiles = Dict{String,SpectrumModel{A,Vector{Float64}, C,D}}()
 	Threads.@threads for tel1 ∈ 1:4
 		   for tel2 ∈ 1:4
 				  tel1==tel2 && continue
@@ -331,67 +331,5 @@ function gravi_spectral_calibration(	wave::AbstractWeightedData{T, 2},
 end
 
 
-#= 
-
-function gravi_create_single_baseline(	baseline::String,
-										data::AbstractWeightedData{T,N},
-										dark::AbstractWeightedData,
-										lamp::AbstractVector,
-										profiles::Dict{String,<:SpectrumModel}) where {T,N}
-
-	extracted_spectra = Dict{String,Vector{WeightedData{Float64,1, Vector{Float64}, Vector{Float64}}}}()
-	interf_spectra = Dict{Char,Vector{WeightedData{Float64,1, Vector{Float64}, Vector{Float64}}}}()
-	rng = axes(lamp,1)
-	
-	flux_spectra1 = WeightedData(zeros(Float64,length(rng)),zeros(Float64,length(rng)))
-	flux_spectra2 = WeightedData(zeros(Float64,length(rng)),zeros(Float64,length(rng)))
-
-	nbframe = size(data,3)
-
-	nbspectra1= 0
-	nbspectra2= 0
-	for (key,profile) ∈ profiles
-		!occursin(key[1],baseline) && !occursin(key[2],baseline) && continue
-		spectrum = [gravi_extract_profile((view(data,rng,:,frame) - dark),profile) for frame ∈ axes(data)[3]]
-		push!(extracted_spectra,key=>spectrum)
-		if key[1] == baseline[1] && key[2] == baseline[2]
-			push!(interf_spectra, key[4] => spectrum)
-			continue
-		end
-		if key[1] == baseline[1] 
-			flux_spectra1 +=  sum(spectrum) / profile.transmissions[1].(rng)
-			nbspectra1+=1
-			continue
-		end
-		if key[2] == baseline[1]
-			flux_spectra1 +=  sum(spectrum) / profile.transmissions[2].(rng)
-			nbspectra1+=1
-			continue
-		end
-		if key[1] == baseline[2] 
-			flux_spectra2 +=  sum(spectrum) / profile.transmissions[1].(rng)
-			nbspectra2+=1
-			continue
-		end
-		if key[2] == baseline[2]
-			flux_spectra2 +=  sum(spectrum) / profile.transmissions[2].(rng)
-			nbspectra2+=1
-			continue
-		end
-	end
-	return extracted_spectra,interf_spectra, flux_spectra1/(nbframe*nbspectra1),flux_spectra2/(nbframe*nbspectra2)
-
-	for (key,profile) ∈ profiles
-		if (tel1 == key[1]) && (tel2 == key[2])
-			continue
-		end
-		key1 = "$tel1-$key" 
-		key2 = "$tel2-$key" 
-	end
-	for chnl ∈ ["A","B","C","D"]
-		profile["$tel1$tel2-$chnl-C"]
-	end	
-end
- =#
 
 end # module ReducingGravity
