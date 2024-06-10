@@ -1,4 +1,10 @@
-function fitprofile(data::AbstractWeightedData{T,2},bndbx::C; center_degree=4, σ_degree=4, thrsld=0.1) where{T,C<:CartesianIndices}
+function fitprofile(data::AbstractWeightedData{T,2},
+					bndbx::C; 
+					center_degree=4, 
+					σ_degree=4, 
+					thrsld=0.1,
+					center_guess=nothing,
+					σ_guess=nothing) where{T,C<:CartesianIndices}
 
 	fulldata = view(data,bndbx)
 	spectra = (sum(fulldata.val .* fulldata.precision,dims=2)./ sum(fulldata.precision,dims=2))[:]
@@ -16,17 +22,47 @@ function fitprofile(data::AbstractWeightedData{T,2},bndbx::C; center_degree=4, �
 
 	center = zeros(center_degree+1)
 	σ = zeros(σ_degree+1)
-	center[1] = mean(bndbx.indices[2])
+	if isnothing(center_guess)
+		#center[1] = mean(bndbx.indices[2])
+		ax,ay =  bndbx[firstidx:lastidx,:].indices
+		ax = Float64.(ax)
+		c = reshape(sum(data.val.*sqrt.(data.precision).* ay', dims=2) ./ sum(sqrt.(data.precision).* data.val, dims=2),:)
+		valid = isfinite.(c)
+		Vandermonde = reduce(hcat,[ ax[valid].^n  for n ∈ 0:center_degree])
+		B = diagm(1. ./sqrt.(sum(Vandermonde.^2,dims=1)[:]))
+		VB = Vandermonde*B
+		center = (B*((VB'*VB)\VB')*c[valid])[:]
+
+	#= 	s = sqrt.(max.(0.,reshape(sum(data.val.*data.precision.* (ay'.-c).^2, dims=2) ./ sum(data.precision.* data.val, dims=2),:)))
+		valid = isfinite.(s)
+		Vandermonde = reduce(hcat,[ ax[valid].^n  for n ∈ 0:center_degree])
+		B = diagm(1. ./sqrt.(sum(Vandermonde.^2,dims=1)[:]))
+		VB = Vandermonde*B
+		σ_guess = (B*((VB'*VB)\VB')*s[valid])[:] =#
+
+	else
+		l = min(length(center_guess),center_degree+1)
+		center[1:l] = center_guess[1:l]
+	end
 	
-	σ[1] = 0.5 #std((shp .* ay) ./ sum(shp))
-	θ = (;center=center, σ = σ)
+	if isnothing(σ_guess)
+		σ[1] = 0.5 #std((shp .* ay) ./ sum(shp))
+	else
+		l = min(length(σ_guess),σ_degree+1)
+		σ[1:l] = σ_guess[1:l]
+	end
+
+	θ = (;center=center./specmodel.preconditionner[1:center_degree+1], σ = σ./specmodel.preconditionner[1:σ_degree+1])
 	params, unflatten = destructure(θ)
 	f(params) = scaledlikelihood(data,specmodel(;unflatten(params)...))
+	xopt, info = prima(f, params; maxfun=10_000,ftarget=55296)
+	
+	#res = optimize(f, params, NelderMead(),Optim.Options(iterations=10000))
+	#xopt = Optim.minimizer(res)
 
-	res = optimize(f, params, NelderMead(),Optim.Options(iterations=10000))
-	xopt = Optim.minimizer(res)
 	θopt= unflatten(xopt)
 	(;center,σ) = θopt
+
 	center .*=  specmodel.preconditionner[1:center_degree+1]
 	σ .*=  specmodel.preconditionner[1:σ_degree+1]
 	θopt = (;center=center,σ=σ)

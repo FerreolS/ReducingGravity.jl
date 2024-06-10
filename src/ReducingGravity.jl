@@ -18,7 +18,8 @@ using 	FITSIO,
 		OptimPackNextGen,
 		InterpolationKernels,
 		SparseArrays,
-		KrylovKit
+		KrylovKit,
+		PRIMA
 
 import 	ImageFiltering: mapwindow
 
@@ -87,7 +88,7 @@ function gravi_data_create_bias_mask(darkfits::FITS)
 	# M = B*((C'*C)\C')
 	
 	#bbx = Dict{String,BoundingBox{Int}}()
-	bbx = Dict{String, CartesianIndices{2, Tuple{UnitRange{Int64}, UnitRange{Int64}}}}()
+	bbx = Dict{String, Tuple{Vector{Float64},CartesianIndices{2, Tuple{UnitRange{Int64}, UnitRange{Int64}}}}}()
 	sizehint!(bbx,nregion)
 	rng = 1:nx
 	for i ∈ 1:nregion
@@ -98,7 +99,7 @@ function gravi_data_create_bias_mask(darkfits::FITS)
 			illuminated[ix,max(1,iy-hw):min(ny,iy+hw)] .= true 
 		end
 		#push!(bbx,IMAGING_DETECTOR_SC["REGNAME"][i]=>BoundingBox(1,nx,max(1,minimum(cy)-hw),min(ny,maximum(cy)+hw)))
-		push!(bbx,IMAGING_DETECTOR_SC["REGNAME"][i]=>CartesianIndices((1:nx,max(1,minimum(cy)-hw):min(ny,maximum(cy)+hw))))
+		push!(bbx,IMAGING_DETECTOR_SC["REGNAME"][i]=>(coefs,CartesianIndices((1:nx,max(1,minimum(cy)-hw):min(ny,maximum(cy)+hw)))))
 	end
 	return (illuminated,bbx)		
 end
@@ -238,10 +239,10 @@ function gravi_create_weighteddata(	data::AbstractArray{T,3},
 end
 
 function gravi_compute_profile(	flats::Vector{ConcreteWeightedData{T,N}},
-								bboxes::Dict{String,C}; 
+								bboxes::Dict{String,Tuple{B,C}}; 
 								center_degree=4, 
 								σ_degree=4, 
-								thrsld=0.1) where {T,N,C}
+								thrsld=0.1) where {T,N,C,B}
 	profile = Dict{String,SpectrumModel{C,Nothing,Nothing,Float64}}()
 	#profile = Dict{String,SpectrumModel}()
 	Threads.@threads for tel1 ∈ 1:4
@@ -250,36 +251,29 @@ function gravi_compute_profile(	flats::Vector{ConcreteWeightedData{T,N}},
 			flatsum = flats[tel1] + flats[tel2]
 			for chnl ∈ ["A","B","C","D"]
 				haskey(bboxes,"$tel1$tel2-$chnl-C") || continue
-				bndbx =bboxes["$tel1$tel2-$chnl-C"] 
- 				θ = fitprofile(flatsum,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld )
+				bndbx =bboxes["$tel1$tel2-$chnl-C"][2] 
+ 				θ = fitprofile(flatsum,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld,center_guess=bboxes["$tel1$tel2-$chnl-C"][1]  )
 				p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{InterpolatedSpectrum{Nothing}}(),1.0,bndbx)
 				push!(profile,"$tel1$tel2-$chnl-C"=>p) 
 			end
 		end
 	end
-	return profile
+	return profiles
 end
 
-function gravi_compute_profile(	flats::ConcreteWeightedData{T,N},
-								bboxes::Dict{String,C}; 
+function gravi_compute_profile(	flat::ConcreteWeightedData{T,N},
+								bboxes::Dict{String,Tuple{B,C}}; 
 								center_degree=4, 
 								σ_degree=4, 
-								thrsld=0.1) where {T,N,C}
-	profile = Dict{String,SpectrumModel{C,Nothing,Nothing,Float64}}()
+								thrsld=0.1) where {T,N,B,C}
+	profiles = Dict{String,SpectrumModel{C,Nothing,Nothing,T}}()
 	#profile = Dict{String,SpectrumModel}()
-	Threads.@threads for tel1 ∈ 1:4
-		for tel2 ∈ 1:4
-			tel1==tel2 && continue
-			for chnl ∈ ["A","B","C","D"]
-				haskey(bboxes,"$tel1$tel2-$chnl-C") || continue
-				bndbx =bboxes["$tel1$tel2-$chnl-C"] 
- 				θ = fitprofile(flats,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld )
-				p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{InterpolatedSpectrum{Nothing}}(),1.0,bndbx)
-				push!(profile,"$tel1$tel2-$chnl-C"=>p) 
-			end
-		end
+	Threads.@threads for (key, (center_guess,bndbx)) ∈ collect(bboxes)
+		θ = fitprofile(flat,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld, center_guess=center_guess)
+		p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{InterpolatedSpectrum{Nothing}}(),T(1.0),bndbx)
+		push!(profiles,key=>p) 
 	end
-	return profile
+	return profiles
 end
 
 function gravi_compute_lamp_transmissions(	spectra::Dict{String, ConcreteWeightedData{T,N}},

@@ -343,7 +343,7 @@ function gravi_compute_flat_and_dark_from_p2vm(	P2VM::Dict{String, Array{T, 3}},
 	sorted = Array{T,4}(undef,sz...,6)
 	ind = ones(Int,length(bboxes))
 
-	for (i,(key,bbox)) ∈ enumerate(bboxes )
+	for (i,(key,(_,bbox))) ∈ enumerate(bboxes )
 
 
 		
