@@ -80,12 +80,12 @@ end
 
 
 function gravi_extract_profile(	data::AbstractWeightedData{T,N},
-								profile::SpectrumModel; 
+								profile::SpectrumModel{A,B,C,D}; 
 								restrict=0.01, 
 								nonnegative=false, 
 								robust=false,
 								kwds...
-								) where {T,N}
+								) where {T,N,A,B,C,D}
 	bbox = profile.bbox
 	if  ndims(bbox)<N
 		(;val, precision) = view(data,bbox,:)
@@ -139,23 +139,6 @@ function gravi_extract_profile(	data::AbstractWeightedData{T,N},
 	return profiles
 end
 
-function gravi_extract_profile_flats(	flats::Vector{<:AbstractWeightedData{T,N}},
-										profile::AbstractDict; 
-										kwds...) where {T,N}
-	spctr = Dict{String,AbstractWeightedData{Float64,1}}()
-	Threads.@threads for tel1 ∈ 1:4
-		for tel2 ∈ 1:4
-			tel1==tel2 && continue
-			for chnl ∈ ["A","B","C","D"]
-				haskey(profile,"$tel1$tel2-$chnl-C") || continue
-				prfl =profile["$tel1$tel2-$chnl-C"] 
-				push!(spctr,"$tel1-$tel1$tel2-$chnl-C"=>gravi_extract_profile(flats[tel1],prfl; kwds...))
-				push!(spctr,"$tel2-$tel1$tel2-$chnl-C"=>gravi_extract_profile(flats[tel2],prfl; kwds...))
-			end
-		end
-	end
-	return spctr
-end
 
 function gravi_extract_profile(	data::AbstractArray{T,N},
 								precision::Union{BitMatrix,AbstractArray{T,N}},

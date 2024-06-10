@@ -33,8 +33,11 @@ function gravi_compute_transmissions(  spectra::Dict{String, ConcreteWeightedDat
 										lamp;
 										thrs=0.01,
 										kwds...) where {T,N,A,B,C<:Interpolator,D} 
-
-	pr_array = Vector{Pair{String,SpectrumModel{A,B,C,Vector{Float64}}}}(undef,length(profiles))
+	if (D <: Number) 
+		pr_array = Vector{Pair{String,SpectrumModel{A,B,C,Vector{Float64}}}}(undef,length(profiles))
+	else
+		pr_array = Vector{Pair{String,SpectrumModel{A,B,C,D}}}(undef,length(profiles))
+	end		
 	Threads.@threads for (i,(key,profile)) ∈ collect(enumerate(profiles) )
 		tel1 = key[1] 
 		tel2 = key[2]
@@ -283,7 +286,7 @@ end
 
 function gravi_compute_gain_from_p2vm(	flats::Vector{C}, 
 										dark::C,
-										profiles::Dict{String,<:},
+										profiles::AbstractDict,
 										goodpix::BitMatrix; 
 										restrict=0.0, 
 										fix_gain=true,
