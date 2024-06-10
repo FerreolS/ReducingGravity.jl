@@ -3,6 +3,8 @@ using ReducingGravity
 
 
 dirpath = "/Users/ferreol/Data/Gravity+/2020-01-06_MEDIUM_COMBINED/"
+
+dirpath = "/Users/ferreol/Data/RawData/GRAVITY+/2018-03-09_HIGH_COMBINED"
 #dirpath = "/Users/ferreol/Data/Gravity+/2020-03-09_MEDIUM_COMBINED/"
 flist = ReducingGravity.listfitsfiles(dirpath);
 
@@ -25,7 +27,7 @@ P2VMwd = Vector{Pair{String,ConcreteWeightedData{Float32,2}}}(undef,len_p2vm)
 Threads.@threads for (i,pv2mfile) ∈ collect(enumerate(values(filter(x -> occursin("P2VM", x.second.type), flist))))
 	rawdata =read(FITS(pv2mfile.path)["IMAGING_DATA_SC"])
 	P2VM[i] = pv2mfile.type => gravi_data_detector_cleanup(rawdata,illuminated,keepbias=true)[2]
-	data,_ = gravi_create_weighteddata(rawdata,illuminated,goodpix; filterblink=true, blinkkernel=(1,1,9),keepbias=true, cleanup=false)
+	data,_ = gravi_create_weighteddata(rawdata,illuminated,goodpix; filterblink=true, blinkkernel=9,keepbias=true, cleanup=false)
 	P2VMwd[i] = pv2mfile.type =>data
 end
 P2VM = Dict(P2VM)
@@ -56,8 +58,7 @@ profiles = gravi_spectral_calibration(wave,darkwave, profiles; nonnegative=true,
 # TODO To be adapted once the sorted gravi_compute_gain_from_p2vm works
 darkp2vm, gain, rov = gravi_compute_gain_from_p2vm(P2VMwd,profiles,goodpix)
 spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkp2vm,profiles; nonnegative=true, robust=false)
-profiles, lamp = gravi_compute_lamp_transmissions(  spctr, profiles; nb_transmission_knts=40,
-nb_lamp_knts=360)
+profiles, lamp = gravi_compute_lamp_transmissions(  spctr, profiles; nb_transmission_knts=40,nb_lamp_knts=360)
 
 
 wd = gravi_create_weighteddata(p2vm, illuminated,goodpix,rov, gain)

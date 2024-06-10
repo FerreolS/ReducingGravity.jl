@@ -96,7 +96,7 @@ function gravi_data_create_bias_mask(darkfits::FITS)
 		coefs = M*y
 		cy = round.(Int, mapreduce( n -> coefs[n+1] .* rng.^n,+,0:maxdeg))
 		for (ix,iy ) ∈ zip(rng,cy)
-			illuminated[ix,max(1,iy-hw):min(ny,iy+hw)] .= true 
+			view(illuminated,ix,max(1,iy-hw):min(ny,iy+hw)) .= true 
 		end
 		#push!(bbx,IMAGING_DETECTOR_SC["REGNAME"][i]=>BoundingBox(1,nx,max(1,minimum(cy)-hw),min(ny,maximum(cy)+hw)))
 		push!(bbx,IMAGING_DETECTOR_SC["REGNAME"][i]=>(coefs,CartesianIndices((1:nx,max(1,minimum(cy)-hw):min(ny,maximum(cy)+hw)))))
@@ -105,33 +105,33 @@ function gravi_data_create_bias_mask(darkfits::FITS)
 end
 
 
-function gravi_data_detector_cleanup(	data::AbstractArray{T,3},
+function gravi_data_detector_cleanup!(	data::AbstractArray{T,3},
 										illuminated::BitMatrix;
 										keepbias=true,
-										meanbias = false, kwd...)  where T
-	if meanbias
-		avgbias = T(0)
-	else
-		avgbias = zeros(T,size(data,1),1)
-	end
-	cleaneddata = copy(data)
+										kwd...)  where T
+	avgbias = zeros(T,size(data,1),1)
+	
 	@inbounds for n ∈ axes(illuminated,1)
 		#mdata = median(data[n,.!illuminated[n,:],..],dims=1) 
 		mdata = map(median, eachslice(data[n,.!illuminated[n,:],:],dims=2))
-		cleaneddata[n,:,..] .-= reshape(mdata,1,:)
-		if meanbias
-			avgbias += mean(mdata)
-		else 
-			avgbias[n] = mean(mdata)
-		end
-	end
-	if meanbias
-		avgbias /= size(illuminated,1)
+		view(data,n,:,:) .-= reshape(mdata,1,:)
+		avgbias[n] = mean(mdata)
+		
 	end
 	if keepbias
-		cleaneddata .+= avgbias
+		data .+= avgbias
 	end
-	return  avgbias,cleaneddata 
+	return  avgbias 
+end
+
+
+
+function gravi_data_detector_cleanup(data::AbstractArray{T,3},
+										illuminated::BitMatrix;
+										kwd...)  where T
+	cleaneddata = copy(data)	
+	avgbias = gravi_data_detector_cleanup!(cleaneddata,illuminated;kwd...)		
+	return avgbias,cleaneddata			
 end
 
 
@@ -157,15 +157,24 @@ end
 
 function gravi_compute_blink(	data::AbstractArray{T,3}; 
 								temporalthresold=5, 
-								blinkkernel=(1,1,5),
-								bias=20,
-								kwd...) where {T}
+								blinkkernel=5,
+								bias::B=20,
+								kwd...) where {T,B}
 	#bias = T(bias)
 	#mdata = map(median, eachslice(data,dims=(1,2)))
 	#mdata = dropdims(median(data, dims=3),dims=3) # median(, dims=) is type unstable
-	mdata = map(x->quantile(x,0.5), eachslice(data,dims=(1,2)))
-	ffiltered = (data .- mapwindow(median, data,blinkkernel,border="circular")) ./ sqrt.(max.(mdata , bias))
+	#mdata = map(x->quantile(x,0.5), eachslice(data,dims=(1,2)))
+	#ffiltered = (data .- mapwindow(median, data,blinkkernel,border="circular")) ./ sqrt.(max.(mdata , bias))
 
+
+	sz =size(data)[1:2]
+	ffiltered = similar(data)
+	for i in CartesianIndices(sz)
+		mdata = quantile(data[i,:],0.5)
+		b =  B <: Number ? bias :  bias[i[1]]
+		
+		ffiltered[i,:] = (data[i,:] .- mapwindow(median, data[i,:] ,blinkkernel,border="circular")) ./ sqrt.(max.(mdata ,b))
+	end
 	σ = mad(ffiltered)
 	threshold = T.(temporalthresold * σ)
 	blink = ( -threshold .< ffiltered .< threshold)
@@ -184,7 +193,7 @@ function gravi_create_weighteddata(	data::AbstractArray{T,3},
 	
 	goodpix = copy(goodpix)
 	if cleanup
-		bias,data = gravi_data_detector_cleanup(data,illuminated;kwd...)
+		bias = gravi_data_detector_cleanup!(data,illuminated;kwd...)
 	end
 
 	if filterblink
@@ -194,12 +203,12 @@ function gravi_create_weighteddata(	data::AbstractArray{T,3},
 		blink = trues(size(data))
 	end
 	goodpix .&= illuminated
-	goodblink = goodpix.*blink
-	avg = (sum(data.*goodblink, dims=3) ./ sum(goodblink, dims=3))[:,:,1]
+	blink .&= goodpix 
+	avg = (sum(data.*blink, dims=3) ./ sum(blink, dims=3))[:,:,1]
 	if unbiased
-		wgt =  (sum(goodblink.*(data .- avg).^2,dims=3).\ (sum(goodblink,dims=3) .- 3))[:,:,1]
+		wgt =  (sum(blink.*(data .- avg).^2,dims=3).\ (sum(blink,dims=3) .- 3))[:,:,1]
 	else
-		wgt =  (sum(goodblink.*(data .- avg).^2,dims=3).\ (sum(goodblink,dims=3) ))[:,:,1]
+		wgt =  (sum(blink.*(data .- avg).^2,dims=3).\ (sum(blink,dims=3) ))[:,:,1]
 	end
 	goodpix .&= isfinite.(wgt) .&& isfinite.(avg)
 	avg[.!(goodpix)] .= zero(T)
@@ -223,7 +232,7 @@ function gravi_create_weighteddata(	data::AbstractArray{T,3},
 	
 
 	if cleanup
-		bias,data = gravi_data_detector_cleanup(data,illuminated)
+		bias = gravi_data_detector_cleanup!(data,illuminated)
 	end
 	data = view(data .- dark,bndbox,:)
 	rov = view(rov,bndbox.indices[1])
