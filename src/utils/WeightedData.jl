@@ -51,9 +51,9 @@ function ChainRulesCore.rrule( ::typeof(likelihood),A::D,model::AbstractArray) w
     return  sum(r.*rp) / 2, likelihood_pullback
 end
 
-function scaledlikelihood(A::D,model::AbstractArray) where {D<:WeightedData}
+function scaledlikelihood(A::D,model::AbstractArray{T,N}) where {D<:WeightedData,T,N}
 	α = max.(0,sum(model .* A.precision .* A.val,dims=2) ./ sum( model .*  A.precision .* model,dims=2) )
-	
+	α[.!isfinite.(α)] .= T(0)
 	res = ( α .* model .- A.val) 
 	return sum(res.^2 .* A.precision)/2
 end
