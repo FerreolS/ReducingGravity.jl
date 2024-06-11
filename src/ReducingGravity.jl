@@ -169,7 +169,7 @@ function gravi_compute_blink(	data::AbstractArray{T,3};
 
 	sz =size(data)[1:2]
 	ffiltered = similar(data)
-	for i in CartesianIndices(sz)
+	@inbounds @simd for i in CartesianIndices(sz)
 		mdata = quantile(data[i,:],0.5)
 		b =  B <: Number ? bias :  bias[i[1]]
 		
@@ -191,6 +191,8 @@ function gravi_create_weighteddata(	data::AbstractArray{T,3},
 									bias=20,
 									kwd...) where T
 	
+	sz =size(data)[1:2]	
+
 	goodpix = copy(goodpix)
 	if cleanup
 		bias = gravi_data_detector_cleanup!(data,illuminated;kwd...)
@@ -202,7 +204,27 @@ function gravi_create_weighteddata(	data::AbstractArray{T,3},
 	else
 		blink = trues(size(data))
 	end
-	goodpix .&= illuminated
+	
+	avg = zeros(T,sz)
+	wgt = zeros(T,sz)
+	@inbounds @simd for i in CartesianIndices(sz)
+		@view goodpix[i] &= illuminated[i]
+		@view blink[i,:] .&= goodpix[i]
+		a = (sum(data[i,:].*blink[i,:]) ./ sum(blink[i,:]))
+		if unbiased
+			w =  (sum(blink[i,:].*(data[i,:] .- a).^2).\ (sum(blink[i,:]) .- 3))
+		else
+			w =  (sum(blink[i,:].*(data[i,:] .- a).^2).\ (sum(blink[i,:]) ))
+		end
+		goodpix[i] &= isfinite(w) && isfinite(a)
+		if !goodpix[i] 
+			a = T(0)
+			w = T(0)
+		end
+		avg[i] = a
+		wgt[i] = w
+	end
+#= 	goodpix .&= illuminated
 	blink .&= goodpix 
 	avg = (sum(data.*blink, dims=3) ./ sum(blink, dims=3))[:,:,1]
 	if unbiased
@@ -212,7 +234,7 @@ function gravi_create_weighteddata(	data::AbstractArray{T,3},
 	end
 	goodpix .&= isfinite.(wgt) .&& isfinite.(avg)
 	avg[.!(goodpix)] .= zero(T)
-	wgt[.!(goodpix)] .= zero(T)
+	wgt[.!(goodpix)] .= zero(T) =#
 	weighteddata = WeightedData(avg,wgt)
 	flagbadpix!(weighteddata,.!goodpix)
 	return (weighteddata, goodpix)
