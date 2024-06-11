@@ -338,12 +338,12 @@ end
 
 
 
-function gravi_build_p2vm_matrix_interp(	profiles::AbstractDict,
+function gravi_build_V2PM(	profiles::AbstractDict,
 									baseline_phasors; 
 									baselines=baselines_list,
 									λsampling=nothing,
 									λmin=0.0,λmax=1.0,
-									kernel = first(values(profiles)).transmissions[1].basis.kernel)
+									kernel = CatmullRomSpline())
 	
 	lk = length(kernel) 
 	if isnothing(λsampling)
@@ -449,7 +449,7 @@ function  get_correlatedflux(V2PM::AbstractMatrix{T},
 	nrow = size(V2PM,2) ÷ (6*2+4)
 	output = zeros(T,6*2+4,nrow,nframe)
 	Threads.@threads for t ∈ axes(val,2)
-		A = Hermitian((V2PM'*(view(precision,:,t).*V2PM)))
+		A = Symmetric((V2PM'*(view(precision,:,t).*V2PM)))
 		b = V2PM'*(view(precision,:,t) .* view(val,:,t))[:]	
 		x,info= KrylovKit.linsolve(A,b; issymmetric=true,kwds...)
 		view(output,:,:,t)[:] .= x[:] 
