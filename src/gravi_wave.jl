@@ -29,18 +29,20 @@ function gravi_spectral_calibration(      wave::AbstractWeightedData{T,1},
        P = hcat( ((lines .* 1e6).^n for n=0:λorder)...)
        init = inv(P'*P)*P' * guess
        s = profile.σ
-       f(x) = loss(wave,s,P, x)
+       f(x) = loss(wave,mean(s,dims=2),P, x)
        x = vmlmb(f, init;maxeval=500,ftol=(0,0), autodiff=true);
        Q = hcat( ((P*x).^n for n=0:3)...)
        λcoefs = collect(inv(Q'*Q)*Q'*lines )
        return   add_spectral_law(profile,λcoefs)
 end
 
-function loss(data::AbstractWeightedData{T,1}, prσ::AbstractVector,P::AbstractMatrix,x::AbstractVector) where T
-       σdeg = length(prσ)
+function loss(data::AbstractWeightedData{T,1}, prσ::AbstractArray,P::AbstractMatrix,x::AbstractVector) where T
+       σdeg = size(prσ,1)
        rng = axes(data,1)
        prediction = P * x
+
        σ = prediction .^(0:(σdeg-1))'* prσ
+       
        G = gaussian_lines(rng;center=prediction,σ=σ)
        amp = max.(0.,getamplitude(data,G))
        likelihood(data,G*amp)
@@ -57,7 +59,7 @@ function add_spectral_law(s::SpectrumModel{A,B,C,D},λcoefs::E) where {A,B,C,D,E
 	cntr = get_center(s)
 	new_center = inv(P'*P)*P'* cntr
 
-	σdeg = length(s.σ)
+	σdeg = size(s.σ,1)
 	P = (λ).^(0:(σdeg-1))'
 	sgm = get_width(s)
 	new_σ = inv(P'*P)*P'* sgm

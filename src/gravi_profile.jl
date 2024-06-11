@@ -4,6 +4,7 @@ function fitprofile(data::AbstractWeightedData{T,2},
 					σ_degree=4, 
 					thrsld=0.1,
 					center_guess=nothing,
+					nb_σ=2,
 					σ_guess=nothing) where{T,C<:CartesianIndices}
 
 	fulldata = view(data,bndbx)
@@ -21,7 +22,7 @@ function fitprofile(data::AbstractWeightedData{T,2},
 
 
 	center = zeros(center_degree+1)
-	σ = zeros(σ_degree+1)
+	σ = zeros(σ_degree+1,nb_σ)
 	if isnothing(center_guess)
 		#center[1] = mean(bndbx.indices[2])
 		ax,ay =  bndbx[firstidx:lastidx,:].indices
@@ -46,16 +47,16 @@ function fitprofile(data::AbstractWeightedData{T,2},
 	end
 	
 	if isnothing(σ_guess)
-		σ[1] = 0.5 #std((shp .* ay) ./ sum(shp))
+		σ[1,:] .= 0.5 #std((shp .* ay) ./ sum(shp))
 	else
-		l = min(length(σ_guess),σ_degree+1)
-		σ[1:l] = σ_guess[1:l]
+		l = min(size(σ_guess,1),σ_degree+1)
+		σ[1:l,:] .= σ_guess[1:l]
 	end
 
 	θ = (;center=center./specmodel.preconditionner[1:center_degree+1], σ = σ./specmodel.preconditionner[1:σ_degree+1])
 	params, unflatten = destructure(θ)
 	f(params) = scaledlikelihood(data,specmodel(;unflatten(params)...))
-	xopt, info = prima(f, params; maxfun=10_000,ftarget=55296)
+	xopt, info = prima(f, params; maxfun=10_000,ftarget=length(data))
 	
 	#res = optimize(f, params, NelderMead(),Optim.Options(iterations=10000))
 	#xopt = Optim.minimizer(res)

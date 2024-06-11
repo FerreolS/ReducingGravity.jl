@@ -46,7 +46,7 @@ end
 
 struct SpectrumModel{A,B,C,D}
 	center::Vector{Float64}
-	σ::Vector{Float64}
+	σ::Matrix{Float64}
 	λ::B
 	λbnd::Vector{Float64}
 	transmissions::Vector{InterpolatedSpectrum{C}}
@@ -61,7 +61,7 @@ function ((;center,σ)::SpectrumModel{A,Nothing,B,D})(p) where {A,B,D}
 	σp = p .^(0:(σdeg-1))'* σ
 	#λdeg = length(λ)
  	#λp = p .^(0:(λdeg-1))'* λ
-	return (;center=cp[1],σ=σp[1])#,λ=λp[1])
+	return (;center=cp[1],σ=σp)#,λ=λp[1])
 end
 
 function get_center(s::SpectrumModel{A,B,C,D}) where {A,B,C,D}
@@ -77,7 +77,7 @@ end
 
 function get_width((;σ,bbox)::SpectrumModel)
 	p = bbox.indices[1]
-	σdeg = length(σ)	
+	σdeg = size(σ,1)	
 	return p .^(0:(σdeg-1))'* σ
 end
 
@@ -120,22 +120,29 @@ end
 
 function (self::ProfileModel{A1,P})(;center=[0.0],σ=[1.0],amplitude=[1.0]) where {A1,P}
 	ncenter = length(center)
-	nσ = length(σ)
+	nσ = size(σ,1)
 	namp = length(amplitude)
 	ax = self.bbox.indices[1]
 	ay = self.bbox.indices[2]
 
 	degmax = max(ncenter,nσ,namp)
 	if P == Nothing
-		u = broadcast(^,ax,(0:(degmax-1))')
+		u = broadcast(^,Float64.(ax),(0:(degmax-1))')
 	else
-		u = broadcast(^,ax,(0:(degmax-1))').* self.preconditionner[1:degmax]'
+		u = broadcast(^,Float64.(ax),(0:(degmax-1))').* self.preconditionner[1:degmax]'
 	end
-	cy = sum(u[:,1:ncenter].*center',dims=2)
-	ampy = sum(u[:,1:namp].*amplitude',dims=2)
-
-	sy = sum(u[:,1:nσ].*σ',dims=2)
-
+	cy = u[:,1:ncenter]*center
+	if namp!=1 && namp[1]!=0.0
+		ampy = u[:,1:namp]*amplitude
+	else
+		ampy = 1.0
+	end
+	sy = u[:,1:nσ]*σ
+	if size(σ,2)==2
+		ly = length(ay)
+		sy = sy*vcat(range(0,1,ly)',range(1,0,ly)')
+	end
+	
 	return ampy .* exp.(-1 ./ 2 .*((cy .- ay')./ sy).^2)
 end
 
@@ -144,16 +151,20 @@ end
 function get_profile(profile::SpectrumModel) 
 	(;center,σ) = profile
 	ncenter = length(center)
-	nσ = length(σ)
+	nσ = size(σ,1)
 	ay = profile.bbox.indices[2]
 
 	degmax = max(ncenter,nσ)
 
     λ = get_wavelength(profile)
-	u = broadcast(^,λ,(0:(degmax-1))')
 
-	cy = sum(u[:,1:ncenter].*center',dims=2)
-	sy = sum(u[:,1:nσ].*σ',dims=2)
+	u = broadcast(^,Float64.(λ),(0:(degmax-1))')
+	cy = u[:,1:ncenter]*center
+	sy = u[:,1:nσ]*σ
+	if size(σ,2)==2
+		ly = length(ay)
+		sy = sy*vcat(range(0,1,ly)',range(1,0,ly)')
+	end
 	return exp.(-1 ./ 2 .*((cy .- ay')./ sy).^2)
 end
 
