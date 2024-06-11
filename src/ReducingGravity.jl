@@ -208,13 +208,16 @@ function gravi_create_weighteddata(	data::AbstractArray{T,3},
 	avg = zeros(T,sz)
 	wgt = zeros(T,sz)
 	@inbounds @simd for i in CartesianIndices(sz)
-		@view goodpix[i] &= illuminated[i]
-		@view blink[i,:] .&= goodpix[i]
-		a = (sum(data[i,:].*blink[i,:]) ./ sum(blink[i,:]))
+		goodpix[i] &= illuminated[i]
+		b = blink[i,:]
+		sb = sum(b)
+		d = data[i,:]
+		view(blink,i,:) .&= goodpix[i]
+		a = (sum(d.*b) ./ sb)
 		if unbiased
-			w =  (sum(blink[i,:].*(data[i,:] .- a).^2).\ (sum(blink[i,:]) .- 3))
+			w =  (sum(b.*(d .- a).^2).\ (sb.- 3))
 		else
-			w =  (sum(blink[i,:].*(data[i,:] .- a).^2).\ (sum(blink[i,:]) ))
+			w =  (sum(b.*(d .- a).^2).\ (sb ))
 		end
 		goodpix[i] &= isfinite(w) && isfinite(a)
 		if !goodpix[i] 
