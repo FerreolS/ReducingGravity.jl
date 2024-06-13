@@ -1,5 +1,5 @@
 const baselines_list =[[1,2],[1,3],[4,1],[2,3],[4,2],[4,3]]
-
+const triplet_list =[[1,2,3],[1,2,4],[1,3,4],[2,3,4]]
 
 function  gravi_extract_channel(data::AbstractWeightedData,
 								profile::SpectrumModel,
@@ -42,7 +42,7 @@ function gravi_estimate_ABCD_phasor(H::AbstractArray{T,N},A,B,C,D) where {T,N}
 end
 
 function gravi_initial_input_phase(A,B,C,D)
-    ϕ = atan.((C -A).val , (D-B).val)
+    ϕ = atan.((D-B).val,(C -A).val )
 	err = (A.precision .<=0 .||  B.precision .<=0 .||  C.precision .<=0 .||  D.precision .<=0 )
 	for i ∈ findall(err)
 		ϕ[i] =  ϕ[i- CartesianIndex(1,0)]
@@ -58,7 +58,7 @@ function build_phase(H,data)
 	return inv(H'*(p.*H))*H'*(p .*data.val)
 end
 
-function  gravi_build_ABCD_phasors(ϕ::AbstractArray{T,2},A,B,C,D) where T
+function  gravi_build_ABCD_phasors(ϕ::AbstractArray{T,2},A,B,C,D; zeroA=false) where T
 	phasors = zeros(Float64,size(ϕ,1),4,2)
 	for l ∈ axes(ϕ,1)
 		phi,a,b,c,d = view(ϕ,l,:),view(A,l,:),view(B,l,:),view(C,l,:),view(D,l,:)
@@ -66,6 +66,11 @@ function  gravi_build_ABCD_phasors(ϕ::AbstractArray{T,2},A,B,C,D) where T
 			continue
 		end
 		(pA,pB,pC,pD) = gravi_estimate_ABCD_phasor(phi,a,b,c,d)
+		#= if zeroA
+			cpA = complex(-pA...) 
+			cpA = cpA * exp(-1im * angle(cpA))
+			pA = [real(cpA), imag(cpA)]
+		end =#
 		phasors[l,1,:] .= pA[:]
 		phasors[l,2,:] .= pB[:]
 		phasors[l,3,:] .= pC[:]
@@ -313,24 +318,17 @@ function make_pixels_vector(data::AbstractWeightedData,
 	return WeightedData(v,w)
 end
 
-function extract_correlated_flux(x::AbstractArray{T,N},
-								tλ, 
-								λbaselines,
-								kernel;
+function extract_correlated_flux(x::AbstractArray{T,N};
 								baselines=baselines_list) where {T,N}
-	if N ==1 || size(x,2) ==1
-		x = reshape(x,6*2+4,:);
-	end
-	B = ReducingGravity.Interpolator(tλ,kernel)
 
-	photometric= [InterpolatedSpectrum(x[i,:],B) for i∈1:4]
-	interferometric = Vector{Vector{ComplexF64}}(undef,6)
+	x = reshape(x,6*2+4,:,size(x,3))
+	
+
+	photometric= [x[i,:,:] for i∈1:4]
+	interferometric = Vector{Matrix{Complex{T}}}(undef,6)
 	
 	for (i,baseline) ∈ enumerate(baselines)
-		T1,T2 = baseline
-		tel1 = photometric[T1].(λbaselines[i])
-		tel2 = photometric[T2].(λbaselines[i])
-		interferometric[i] = (x[4+2*(i-1)+1,:] .+ 1im .* x[4+2*(i-1)+2,:])  ./ sqrt.(max.(0., tel1 .* tel2))./2
+		interferometric[i] = (x[4+2*(i-1)+1,..] .+ 1im .* x[4+2*(i-1)+2,..]) 
 	end
 	return photometric,interferometric
 end
@@ -380,7 +378,7 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 				λidx > 1 || continue
 				# weights
 				off,weights = InterpolationKernels.compute_offset_and_weights(kernel, λidx)
-				off = Int(off)
+				off = Int(off)+1
 				mx = off + lk
 				wsz = lk
 				if off < 0 
@@ -411,7 +409,7 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
 				c = c+wsz
 				# photometry
-				off,weights = InterpolationKernels.compute_offset_and_weights(kernel, λidx)
+				#off,weights = InterpolationKernels.compute_offset_and_weights(kernel, λidx)
 			
 				V[c:(c+wsz-1)] .= weights .*trans1
 				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ T1
@@ -441,18 +439,135 @@ end
 
 
 function  get_correlatedflux(V2PM::AbstractMatrix{T},	
+								data::AbstractWeightedData{T,2};
+								maxiter=100,atol=1e-3) where {T}
+		
+	nframe = size(data,2)
+	nrow = size(V2PM,2) ÷ (6*2+4)
+	output = zeros(T,6*2+4,nrow,nframe)
+	Threads.@threads for t ∈ 1:nframe
+		#= A = Symmetric(V2PM'*spdiagm(view(precision,:,t))*V2PM)
+		b = V2PM'*(view(precision,:,t) .* view(val,:,t))[:]	
+		x,info= KrylovKit.linsolve(A,b; issymmetric=true,maxiter=maxiter,atol=atol,verbosity=1)
+		  =#
+		x = solveV2PM(V2PM, view(data,:,t))
+		view(output,:,:,t)[:] .= x[:]
+	end
+	return output
+end
+
+function solveV2PM(V2PM, 
+					(;val, precision)::AbstractWeightedData) 
+
+ 	function fg!(x,g)
+       r =(V2PM*x .- val)
+       rp = precision.*r 
+       g .= V2PM'*rp
+       return sum(r.*rp)
+	end
+	x0 = V2PM'*val
+	return vmlmb(fg!,  x0 ;maxeval=500)
+end
+
+function  get_correlatedflux_rough(V2PM::AbstractMatrix{T},	
 								(;val, precision)::AbstractWeightedData{T,2};
-								matrix_inversion=false,
 								kwds...) where {T}
 		
 	nframe = size(val,2)
 	nrow = size(V2PM,2) ÷ (6*2+4)
+
+
+	mwght = mean(precision,dims=2)
+	Id = sparse(I,size(V2PM,2),size(V2PM,2))
+	CxVt = pinv(Symmetric(Array(V2PM'*(mwght.*V2PM) .+ 1e-3.*Id)))*V2PM'
+	
 	output = zeros(T,6*2+4,nrow,nframe)
 	Threads.@threads for t ∈ axes(val,2)
-		A = Symmetric((V2PM'*(view(precision,:,t).*V2PM)))
-		b = V2PM'*(view(precision,:,t) .* view(val,:,t))[:]	
-		x,info= KrylovKit.linsolve(A,b; issymmetric=true,kwds...)
-		view(output,:,:,t)[:] .= x[:] 
+		view(output,:,:,t)[:] .= (CxVt*(mwght.* view(val,:,t)))[:]	
 	end
 	return output
+end
+
+function get_bispectrum(interferometric::AbstractVector{A};
+					triplets=triplet_list,
+					baselines = baselines_list) where{T,N,A<:AbstractArray{Complex{T},N}}
+
+	bispectrum = Vector{Array{Complex{T},N}}(undef,length(triplets))
+	for (i,triplet) ∈ enumerate(triplets)
+		T1,T2,T3 = triplet
+		b1 = findfirst(x->x== [T1,T2] ,baselines)
+		if isnothing(b1)
+			b1 = findfirst(x->x== [T2,T1] ,baselines)
+			p1 = exp.(-1im.*angle.(interferometric[b1]))
+		else
+			p1 = exp.(1im.*angle.(interferometric[b1]))
+		end
+		b2 = findfirst(x->x== [T2,T3] ,baselines)
+		if isnothing(b2)
+			b2 = findfirst(x->x== [T3,T2] ,baselines_list)
+			p2 = exp.(-1im.*angle.(interferometric[b2]))
+		else
+			p2 = exp.(1im.*angle.(interferometric[b2]))
+		end
+
+		b3 = findfirst(x->x== [T3,T1] ,baselines_list)
+		if isnothing(b3)
+			b3 = findfirst(x->x== [T1,T3] ,baselines_list)
+			p3 = exp.(-1im.*angle.(interferometric[b3]))
+		else
+			p3 = exp.(1im.*angle.(interferometric[b3]))
+		end
+		bispectrum[i] = ( p1.*p2.*p3)
+	end
+
+	return bispectrum
+end
+
+function get_closures(  interferometric::AbstractVector{A};
+						triplets=triplet_list,
+						baselines = baselines_list) where{T,N,A<:AbstractArray{Complex{T},N}}
+	return broadcast(x->angle.(x), get_bispectrum(interferometric; triplets=triplets, baselines = baselines))
+end
+
+
+function build_baselinecloseMatrix(;baselines = baselines_list, triplets=triplet_list)
+
+	base2clos = zeros(4,6)
+	for (i,triplet) ∈ enumerate(triplets)
+		T1,T2,T3 = triplet
+		b1 = findfirst(x->x== [T1,T2] ,baselines)
+		if isnothing(b1)
+			b1 = findfirst(x->x== [T2,T1] ,baselines)
+			base2clos[i,b1] = -1
+		else
+			base2clos[i,b1] = 1
+		end
+		b2 = findfirst(x->x== [T2,T3] ,baselines)
+		if isnothing(b2)
+			b2 = findfirst(x->x== [T3,T2] ,baselines_list)
+			base2clos[i,b2] = -1
+		else
+			base2clos[i,b2] = 1
+		end
+		b3 = findfirst(x->x== [T3,T1] ,baselines_list)
+		if isnothing(b3)
+			b3 = findfirst(x->x== [T1,T3] ,baselines_list)
+			base2clos[i,b3] = -1
+		else
+			base2clos[i,b3] = 1
+		end
+	end
+	return base2clos
+end
+
+function zeroclosure!(interferometric, closures;baselines = baselines_list, triplets=triplet_list)
+	M = build_baselinecloseMatrix(;baselines = baselines, triplets=triplets)
+	C = dropdims(mean(cat(closures...,dims=3),dims=2),dims=2)
+	for l ∈ axes(C,1)
+		basephi = (1/4 .*M'*C[l,:])
+		for b ∈ axes(interferometric,1)
+			iphi = exp(-1im* basephi[b])
+			interferometric[b][l,:]  .*= iphi
+		end
+	end
 end
