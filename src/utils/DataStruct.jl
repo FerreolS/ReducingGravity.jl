@@ -15,7 +15,7 @@ function (self::InterpolatedSpectrum{B})(x) where B<:Interpolator
 	notnan = isfinite.(x)
 	if any(notnan)
 		basis = build_interpolation_matrix(kernel,knots,view(x, notnan))
-		out = copy(x)
+		out = collect(x)
 		view(out,notnan) .= basis*self.coefs
 		return out
 	else
