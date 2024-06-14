@@ -58,8 +58,8 @@ function build_phase(H,data)
 	return inv(H'*(p.*H))*H'*(p .*data.val)
 end
 
-function  gravi_build_ABCD_phasors(ϕ::AbstractArray{T,2},A,B,C,D; zeroA=false) where T
-	phasors = zeros(Float64,size(ϕ,1),4,2)
+#= function  gravi_build_ABCD_phasors(ϕ::AbstractArray{T,2},A,B,C,D; zeroA=false) where T
+	phasors = zeros(Float64,2,4,size(ϕ,1))
 	for l ∈ axes(ϕ,1)
 		phi,a,b,c,d = view(ϕ,l,:),view(A,l,:),view(B,l,:),view(C,l,:),view(D,l,:)
 		if any(isnan,phi) || any(iszero,phi)
@@ -71,40 +71,49 @@ function  gravi_build_ABCD_phasors(ϕ::AbstractArray{T,2},A,B,C,D; zeroA=false) 
 			cpA = cpA * exp(-1im * angle(cpA))
 			pA = [real(cpA), imag(cpA)]
 		end =#
-		phasors[l,1,:] .= pA[:]
-		phasors[l,2,:] .= pB[:]
-		phasors[l,3,:] .= pC[:]
-		phasors[l,4,:] .= pD[:]
+		phasors[:,1,l] .= pA[:]
+		phasors[:,2,l] .= pB[:]
+		phasors[:,3,l] .= pC[:]
+		phasors[:,4,l] .= pD[:]
 	end
 	return phasors
 end
+ =#
+function gravi_build_ABCD_phasors(ϕ::AbstractArray{T,N},A,B,C,D) where {T,N}
+	if N==2
+		nl = size(ϕ,1)
+	else
+		nl = size(ϕ,2)
+	end
+	phasors = zeros(Float64,2,4,nl)
 
-function gravi_build_ABCD_phasors(ϕ::AbstractArray{T,3},A,B,C,D) where {T}
-	phasors = zeros(Float64,size(ϕ,1),4,2)
-	#trailing = [Colon() for i=2:N]
-
-	for l ∈ axes(ϕ,1)
-		phi,a,b,c,d = view(ϕ,l,:,:),view(A,l,:),view(B,l,:),view(C,l,:),view(D,l,:)
+	for l ∈ 1:nl
+		if N==2
+			phi = view(ϕ,l,:)
+		else
+			phi = view(ϕ,:,l,:)'
+		end
+		a,b,c,d = view(A,l,:),view(B,l,:),view(C,l,:),view(D,l,:)
 		if any(.!isfinite,phi) || any(iszero,phi)
 			continue
 		end
 		(pA,pB,pC,pD) = gravi_estimate_ABCD_phasor(phi,a,b,c,d)
-		phasors[l,1,:] .= pA[:]
-		phasors[l,2,:] .= pB[:]
-		phasors[l,3,:] .= pC[:]
-		phasors[l,4,:] .= pD[:]
+		phasors[:,1,l] .= pA[:]
+		phasors[:,2,l] .= pB[:]
+		phasors[:,3,l] .= pC[:]
+		phasors[:,4,l] .= pD[:]
 	end
 	return phasors
 end
 
 function estimate_visibility(phasors,A,B,C,D;
 						robust=false)
-	phase =zeros(Float64,size(A)...,2)
+	phase =zeros(Float64,2,size(A)...)
 	for l ∈ axes(A,1)
-		P = phasors[l,:,:]
+		P = phasors[:,:,l]'
 		#P[:,2] .*=-1
 		#if any(x->(iszero(x)||isnan(x)),P[:]) 
-		if any(x->(isnan(x)),P) || all(iszero,P)
+		if any(x->(isnan(x)),P) || sum(iszero.(P))>2
 			continue
 		end
 
@@ -114,14 +123,14 @@ function estimate_visibility(phasors,A,B,C,D;
 			if sum(iszero.(w))>2 || any(isnan,w[:])
 				continue #phase[l,t,:] .=  zeros(Float64,2)
 			else
-				phase[l,t,:] .= (inv(P'*(w.*P))*P'*(w.*input))[:]
+				phase[:,l,t] .= (inv(P'*(w.*P))*P'*(w.*input))[:]
 				if robust
 					res = sqrt.(w) .* (P * phase[l,t,:] .- input) 
 					w .*= (-2.795 .< res .<  2.795)
 					if  sum(iszero.(w))>2 || any(isnan,w[:])
 						continue
 					end
-					phase[l,t,:] .= (inv(P'*(w.*P))*P'*(w.*input))[:]
+					phase[:,l,t] .= (inv(P'*(w.*P))*P'*(w.*input))[:]
 				end
 			end
 		end
@@ -144,10 +153,10 @@ function gravi_build_p2vm_interf(p2vm_data,profiles,lamp;loop_with_norm=5,loop=5
 		phasors= gravi_build_ABCD_phasors(ϕ,A,B,C,D)
 		visibilities = estimate_visibility(phasors,A,B,C,D)
 		for _ ∈ 1:loop_with_norm
-			rho = sqrt.(visibilities[:,:,1].^2 .+ visibilities[:,:,2] .^2)
+			rho = sqrt.(visibilities[1,:,:].^2 .+ visibilities[2,:,:] .^2)
 			#rho3 = (ones(360) .* median(rho,dims=1))
-			rho3 = (ones(360) .* median(rho[50:200,:],dims=1))
-			visibilities .*= 1 ./ rho  .* rho3
+			rho3 =  ones(360) .* median(rho[50:200,:],dims=1)
+			visibilities .*= reshape(1 ./ rho  .* rho3,1,size(rho)...)
 			phasors= gravi_build_ABCD_phasors(visibilities,A,B,C,D);
 			visibilities = estimate_visibility(phasors,A,B,C,D);
 		end
@@ -163,6 +172,26 @@ function gravi_build_p2vm_interf(p2vm_data,profiles,lamp;loop_with_norm=5,loop=5
 	return baseline_phasors, baseline_visibilities
 end
 
+#= /* Compute delta_lambda and lambda from experience */
+	double delta_lambda = (nwave > GRAVI_LBD_FTSC) ? 0.45 / nwave * 3 : 0.13;
+    double lambda = 2.0 + 0.45 / nwave * wave;
+    
+	 /* Compute coherent length */
+	double coh_len= (lambda*lambda) / delta_lambda * 1.e-6;
+
+	long nrow = cpl_vector_get_size (opd);
+	cpl_vector * envelope = cpl_vector_new (nrow);
+
+	/* Gaussian enveloppe */
+	for (long row = 0; row < nrow; row++){
+		double value = cpl_vector_get (opd, row);
+        cpl_vector_set (envelope, row, exp(-1*(value*value)/(coh_len*coh_len/2.)));
+        CPLCHECK_NUL ("Cannot compute envelope");
+	} =#
+function fit_envellope(visibilities)
+	
+	
+end
 function wavelength_range(profiles; 
 							baselines=baselines_list,
 							padding=0, 
@@ -399,12 +428,12 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 				# Interferometry
 				trans =  weights.*sqrt(trans1*trans2) 
 				#Real
-				V[c:(c+wsz-1)] .= baseline_phasors[i][idx,ci,1] .* trans 
+				V[c:(c+wsz-1)] .= baseline_phasors[i][1,ci,idx] .* trans 
 				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ 4 .+ (i-1)*(2) .+ 1
 				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
 				c = c+wsz
 				#Im
-				V[c:(c+wsz-1)] .= baseline_phasors[i][idx,ci,2] .* trans 
+				V[c:(c+wsz-1)] .= baseline_phasors[i][2,ci,idx] .* trans 
 				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ 4 .+ (i-1)*(2) .+ 2
 				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
 				c = c+wsz

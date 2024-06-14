@@ -75,12 +75,15 @@ C = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["13-C-C"],lamp)
 D = ReducingGravity.gravi_extract_channel(wd-darkp2vm,profiles["13-D-C"],lamp)
 ϕ = ReducingGravity.gravi_initial_input_phase(A,B,C,D)
 phasors= ReducingGravity.gravi_build_ABCD_phasors(ϕ,A,B,C,D);
+
 phase = ReducingGravity.estimate_visibility(phasors,A,B,C,D);
 v=phase;
-rho = sqrt.(phase[:,:,1].^2 .+ phase[:,:,2] .^2)
+rho = sqrt.(phase[1,:,:].^2 .+ phase[2,:,:] .^2)
 rho3 = (ones(360) .* median(rho[50:200,:],dims=1))
-phase .*= 1 ./ rho  .* rho3
+phase .*= reshape(1 ./ rho  .* rho3,1,size(rho)...)
 phasors= ReducingGravity.gravi_build_ABCD_phasors(phase,A,B,C,D);
+#phasors[phasors.>1.].=0.
+#phasors[phasors.<0.8].=0.
 phase = ReducingGravity.estimate_visibility(phasors,A,B,C,D);
 sum(abs2,filter(isfinite,(phase.-v))) 
  =#
