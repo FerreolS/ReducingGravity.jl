@@ -14,13 +14,15 @@ function build_interpolation_matrix(kernel::Kernel{T,N}, knots, samples) where {
 		off = Int(off)
 		mx = off + N
 		if off < 0 
+			s = sum(weights[1:(1-off)])
 			weights = weights[(1 - off):end]
+			weights = (s,weights[2:end]...)
 			off = 0			
-			weights = (sw=sum(weights))==0 ? weights : weights./sw
 		elseif (off+N) > col
 			mx = min(off + N, col )
+			s = sum(weights[(mx-off):end])
 			weights = weights[1:(mx-off)] 
-			weights = (sw=sum(weights))==0 ? weights : weights./sw
+			weights = (weights[1:end-1]...,s)
 		end
 		K[l,(off+1):mx] .= weights
 	end
