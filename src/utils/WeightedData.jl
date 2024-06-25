@@ -6,6 +6,10 @@ struct WeightedData{T,N,A<:AbstractArray{T,N},B<:AbstractArray{T,N}}# <: Abstrac
 		new{T,N,A,B}(val,precision)
     end
 end
+WeightedData((;val, precision)::WeightedData) = WeightedData(val,precision)
+WeightedData((;val, precision)::WeightedData,I...) = WeightedData(val[I...],precision[I...])
+
+
 AbstractWeightedData{T,N} = WeightedData{T,N,A,B} where {T,N,A,B}
 ConcreteWeightedData{T,N} = WeightedData{T,N,Array{T,N},Array{T,N}} where {T,N}
 
@@ -17,13 +21,13 @@ Base.axes(A::WeightedData,n::Int) = axes(A.val,n)
 Base.getindex(A::WeightedData, I::Vararg{Int, N}) where N	= (;val=A.val[I],precision=A.precision[I])
 Base.getindex(A::WeightedData, I::Int)	= (;val=A.val[I],precision=A.precision[I])
 Base.getindex(A::WeightedData, I...)	= (;val=A.val[I],precision=A.precision[I])
-function Base.setindex!(A, (;val,precision), I)
+function Base.setindex!(A::WeightedData, (;val,precision), I)
     setindex!(A.val, val, I)
     setindex!(A.precision, precision, I)
 end
 
 
-function Base.view(A::WeightedData{T,N}, I...) where {T,N}
+function Base.view(A::WeightedData, I...) 
 	WeightedData(view(A.val,I...),view(A.precision,I...))
 end
 
