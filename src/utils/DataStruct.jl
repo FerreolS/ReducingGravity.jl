@@ -95,10 +95,21 @@ function get_wavelength((;λ,λbnd, bbox)::SpectrumModel; bnd=true)
 	λdeg = length(λ)	
 	wv = p .^(0:(λdeg-1))'* λ
 	if bnd
-		wv[ .!(λbnd[1] .< wv .<λbnd[2])] .= NaN
+		#wv[ .!(λbnd[1] .<= wv .<=λbnd[2])] .= NaN
+		wv= wv[ (λbnd[1] .<= wv .<=λbnd[2])]
+	else
+		wv[ .!(λbnd[1] .<= wv .<=λbnd[2])] .= NaN
 	end
 
 	return wv
+end
+get_wavelength_bounds_inpixels((;bbox)::SpectrumModel{A,Nothing,C,D}) where {A,C,D} = bbox.indices[1]
+
+function get_wavelength_bounds_inpixels((;λ,λbnd, bbox)::SpectrumModel{A,B,C,D}) where {A,B,C,D}
+	p = bbox.indices[1]
+	λdeg = length(λ)	
+	wv = p .^(0:(λdeg-1))'* λ
+	return findfirst(x->x>=λbnd[1],wv):findlast(x->x<=λbnd[2],wv)
 end
 
 
