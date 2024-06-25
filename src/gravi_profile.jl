@@ -70,6 +70,10 @@ function fitprofile(data::AbstractWeightedData{T,2},
 	return θopt
 end
 
+#= A voir si on peut reestimer la precision avec le  model comme estimation de l'esperance
+ =#
+
+
 function gravi_extract_model(	data::AbstractWeightedData{T,N},
 								profile::SpectrumModel; 
 								restrict=0.01, 
@@ -123,7 +127,8 @@ function gravi_extract_profile(	data::AbstractWeightedData{T,N},
 								robust=false,
 								kwds...
 								) where {T,N,A,B,C,D}
-	bbox = profile.bbox
+	#bbox = profile.bbox
+	bbox = CartesianIndices((get_wavelength_bounds_inpixels(profile),profile.bbox.indices[2]))
 	if  ndims(bbox)<N
 		(;val, precision) = view(data,bbox,:)
 	else
@@ -148,7 +153,6 @@ function gravi_extract_profile(	data::AbstractWeightedData{T,N},
 	wd = WeightedData(dropdims(positive .* α,dims=2), dropdims(positive .* αprecision,dims=2))
 
 	if robust # Talwar hard descender
-		#@show size(precision), size(wd), size(model) , size(val)
 		res = sqrt.(precision) .* (positive .* α  .* model .- val) 
 		
 		good = (T(-2.795) .< res .<  T(2.795))
