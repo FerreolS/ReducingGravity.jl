@@ -13,7 +13,7 @@ function gravi_compute_wavelength_bounds(spectra::Dict{String, ConcreteWeightedD
 		key1 = "$tel1-$key" 
 		key2 = "$tel2-$key" 
 
-		wvlngth = get_wavelength(profile,bnd=false)
+		wvlngth = get_wavelength(profile)
 
 		thrs1 = median(spectra[key1].val) .* thrs
 		thrs2 = median(spectra[key2].val) .* thrs
@@ -80,8 +80,8 @@ function gravi_init_transmissions(profiles::Dict{String,SpectrumModel{A,B,C,D}};
 									kwds...
 									) where {A,B,C,D} 
 									
-	λmin = minimum([max(p.λbnd[1],	get_wavelength(p,1)) for p ∈ values(profiles)])
-	λmax = maximum([min(p.λbnd[2],	get_wavelength(p,360)) for p ∈ values(profiles)])
+	λmin = minimum([max(p.λbnd[1],	minimum(filter!(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
+	λmax = maximum([min(p.λbnd[2],	maximum(filter!(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
 	knt =  range(λmin,λmax,nb_transmission_knts)
 
 
@@ -104,9 +104,10 @@ function gravi_fit_transmission(	spectrum::A,
 									lampspectrum,
 									B::Interpolator,
 									wavelength;
+									Chi2=  0.5,
 									kwd...) where {T, A<:AbstractWeightedData{T, 1}} 
 									
-	coefs = compute_coefs(B,wavelength,spectrum/lampspectrum)
+	coefs = compute_coefs(B,wavelength,spectrum/lampspectrum; Chi2=Chi2)
 	return InterpolatedSpectrum(coefs,B)
 
 end
@@ -133,8 +134,8 @@ function gravi_compute_lamp(spectra::Dict{String, S},
 	local Bs
 
 	if isnothing(init_lamp)
-		λmin = minimum([get_wavelength(p,1) for p ∈ values(profiles)])
-		λmax = maximum([get_wavelength(p,360) for p ∈ values(profiles)])
+		λmin = minimum([max(p.λbnd[1],	minimum(filter!(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
+		λmax = maximum([min(p.λbnd[2],	maximum(filter!(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
 		knt = range(λmin,λmax,nb_lamp_knts)
 		Bs =  Interpolator(knt,kernel)
 	else

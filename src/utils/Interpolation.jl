@@ -1,4 +1,3 @@
-
 struct Interpolator{A,B}
 	knots::A
 	kernel::B
@@ -68,14 +67,57 @@ function compute_coefs((;kernel, knots)::Interpolator, x,y,w)
         return Symmetric(pinv(C)) *  K' * (w .* y)
     end
 end
+ 	
 
-function compute_coefs((;kernel, knots)::Interpolator, x,(;val, precision)::AbstractWeightedData)
+
+function compute_coefs(I::Interpolator, x,A::AbstractWeightedData; Chi2 =nothing)
+		isnothing(Chi2) && return compute_coefs(I, x,A.val,A.precision)
+		return compute_coefs(I, x,A,Chi2)
+	end
+
+function compute_coefs((;kernel, knots)::Interpolator, x,A::AbstractWeightedData,Chi2::Float64)
+	(;val, precision) = A
+	N = sum(precision .>0)
 	K = build_interpolation_matrix(kernel,knots,x)
-	C = Hermitian(K' * (precision .* K))
-    F = cholesky(C; check=false)
-    if issuccess(F)
-        return   F \ K' * (precision .* val)
-    else
-        return Symmetric(pinv(C)) *  K' * (precision .* val)
-    end
+	R = build_interpolation_matrix(kernel',knots,x)
+	KK = Hermitian(K' * (precision .* K))
+	RR = Hermitian(R'*R)
+	function f(μ)
+		C = Hermitian( KK .+ (10.0.^μ) .* RR)
+		F = cholesky(C; check=false)
+		if issuccess(F)
+			out =   F \ K' * (precision .* val)
+			return likelihood(A,K*out) ./ N - Chi2
+		else
+			out = Symmetric(pinv(C)) *  K' * (precision .* val)
+			return likelihood(A,K*out) ./ N - Chi2
+		end
+	end
+	a = -9.
+	fa=f(a)
+	if fa > 0
+		F = cholesky(KK; check=false)
+		if issuccess(F)
+			return F \ K' * (precision .* val)
+		else
+			return Symmetric(pinv(KK)) *  K' * (precision .* val)
+		end
+	end
+	b= 1.
+	fb = f(b)
+	while fb < 0
+		a=b
+		fa=fb
+		b += 1
+		fb = f(b)
+	end	
+	(μ, f1, lo1, hi1, n1)  = OptimPackNextGen.Brent.fzero(f,a,fa,b,fb)
+	@debug	μ, f1, lo1, hi1, n1
+	C = Hermitian( KK .+ (10.0.^μ).* RR)
+	F = cholesky(C; check=false)
+	if issuccess(F)
+		return F \ K' * (precision .* val)
+	else
+		return Symmetric(pinv(C)) *  K' * (precision .* val)
+	end
 end
