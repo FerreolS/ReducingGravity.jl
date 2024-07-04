@@ -39,6 +39,20 @@ Base.:/(A::AbstractWeightedData, B)  = WeightedData(A.val ./ B, B.^2 .* A.precis
 Base.:*( B, A::AbstractWeightedData)  = WeightedData(A.val .* B,  A.precision ./ B.^2 )
 Base.:*(A::AbstractWeightedData, B)  = B * A
 
+combine(B::NTuple{N,W}) where {N,W <: AbstractWeightedData}  = combine(first(B),last(B, N-1)...)
+combine(A::AbstractWeightedData, B...)   = combine(combine(A,first(B)),last(B, length(B)-1)...)
+combine(B::AbstractArray{W}) where W <: AbstractWeightedData  = combine(first(B),last(B, length(B)-1)...)
+combine(A::AbstractWeightedData, B::AbstractArray{W}) where W <: AbstractWeightedData  = combine(combine(A,first(B)),last(B, length(B)-1)...)
+combine(A::AbstractWeightedData) = A
+function combine(A::AbstractWeightedData{T,N}, B::AbstractWeightedData{T,N}) where {T,N}
+	precision = A.precision .+B.precision
+	val =(A.precision .* A.val .+ B.precision .* B.val)./(precision)
+	view(val, iszero.(precision)) .= zero(T) 
+    WeightedData(val,precision )
+end
+
+
+
 function flagbadpix!(A::WeightedData{T,N},badpix::Union{ Array{Bool, N},BitArray{N}}) where {T,N}
     A.val[badpix] .= T(0) 
 	A.precision[badpix] .= T(0)

@@ -40,6 +40,7 @@ export 	gravi_data_create_bias_mask,
 		WeightedData,
 		AbstractWeightedData,
 		ConcreteWeightedData,
+		combine,
 		likelihood,
 		flagbadpix!,
 		listfitsfiles
