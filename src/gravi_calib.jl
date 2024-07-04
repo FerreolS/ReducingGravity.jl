@@ -202,6 +202,27 @@ function gravi_extract_profile_flats_from_p2vm(	P2VM::Dict{String, ConcreteWeigh
 
 end
 
+function gravi_extract_profile_flats_from_p2vm(	flats::Vector{W}, 
+												chnames::Matrix{String} ,
+												profiles::AbstractDict; 
+												kwds...
+											) where {T,W<:AbstractWeightedData{T, 2}}
+
+
+	uniqname = unique(chnames)
+	spctr = Vector{Pair{String,ConcreteWeightedData{T,1}}}(undef,length(uniqname))
+	
+	for (i , chnl) ∈ enumerate(uniqname)
+		idx = [idxt[1] for idxt ∈ findall( x -> x == chnl,  chnames)]
+		profile = profiles[chnl[3:end]]
+		ch1 = gravi_extract_profile(flats[idx[1]] ,profile;kwds...)
+		ch2 = gravi_extract_profile(flats[idx[2]] ,profile;kwds...)
+		spctr[i] = chnl => combine(ch1,ch2)
+	end
+	return Dict(spctr)
+
+end
+
 
 function gravi_compute_gain_from_p2vm(	P2VM::Dict{String, ConcreteWeightedData{T, 2}}, 
 										profiles::AbstractDict,
