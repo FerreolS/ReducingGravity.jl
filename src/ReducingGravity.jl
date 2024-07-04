@@ -158,6 +158,7 @@ function gravi_compute_badpix(	rawdata::AbstractArray{T,N},
 end
 
 function gravi_compute_blink(	data::AbstractArray{T,3}; 
+								goodpix= true(size(data)[1:2]),
 								temporalthresold=5, 
 								blinkkernel=5,
 								bias::B=20,
@@ -169,15 +170,14 @@ function gravi_compute_blink(	data::AbstractArray{T,3};
 	#ffiltered = (data .- mapwindow(median, data,blinkkernel,border="circular")) ./ sqrt.(max.(mdata , bias))
 
 
-	sz =size(data)[1:2]
 	ffiltered = similar(data)
-	@inbounds @simd for i in CartesianIndices(sz)
+	@inbounds @simd for i in findall(goodpix)
 		mdata = quantile(data[i,:],0.5)
 		b =  B <: Number ? bias :  bias[i[1]]
 		
 		ffiltered[i,:] = (data[i,:] .- mapwindow(median, data[i,:] ,blinkkernel,border="circular")) ./ sqrt.(max.(mdata ,b))
 	end
-	σ = mad(ffiltered)
+	σ = mad(view(ffiltered,goodpix,:))
 	threshold = T.(temporalthresold * σ)
 	blink = ( -threshold .< ffiltered .< threshold)
 	return blink
@@ -201,7 +201,7 @@ function gravi_create_weighteddata(	data::AbstractArray{T,3},
 	end
 
 	if filterblink
-		blink = gravi_compute_blink(data,bias=bias;kwd...)
+		blink = gravi_compute_blink(data;bias=bias,goodpix=goodpix .&& illuminated,kwd...)
 		goodpix .&= (sum(blink,dims=3) .> max(3,0.75 * size(blink,3)))
 	else
 		blink = trues(size(data))
