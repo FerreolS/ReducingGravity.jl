@@ -2,9 +2,13 @@
 
 
 function gravi_compute_wavelength_bounds(spectra::Dict{String, ConcreteWeightedData{T,N}},
-										profiles::Dict{String,SpectrumModel{A,B,C,D}},
-										thrs=0.01,
-										kwds...) where {T,N,A,B,C,D} 
+	profiles::Dict{String,SpectrumModel{A,B,C,D}},
+	thrs=0.01,
+	kwds...) where {T,N,A,B,C,D} 
+	
+	if all(isfinite,[p.λbnd[2] for (_,p) ∈ profiles])
+		return profiles,spectra
+	end
 	pr_array = Vector{Pair{String,SpectrumModel{A,B,C,D}}}(undef,length(profiles))
 	spectra_array = Vector{Pair{String,ConcreteWeightedData{T,N}}}(undef,length(spectra))
 	Threads.@threads for (i,(key,profile)) ∈ collect(enumerate(profiles) )
@@ -12,15 +16,15 @@ function gravi_compute_wavelength_bounds(spectra::Dict{String, ConcreteWeightedD
 		tel2 = key[2]
 		key1 = "$tel1-$key" 
 		key2 = "$tel2-$key" 
-
+		
 		wvlngth = get_wavelength(profile)
-
+		
 		thrs1 = median(spectra[key1].val) .* thrs
 		thrs2 = median(spectra[key2].val) .* thrs
-
-		pixmin = min(findfirst(spectra[key1].val .> thrs1),findfirst(spectra[key2].val .> thrs2))
-		pixmax = max(findlast(spectra[key1].val .> thrs1),findlast(spectra[key2].val .> thrs2))
-
+		
+		pixmin = min(findfirst(spectra[key1].val .>= thrs1),findfirst(spectra[key2].val .>= thrs2))
+		pixmax = max(findlast(spectra[key1].val .>= thrs1),findlast(spectra[key2].val .>= thrs2))
+		
 		λmin = wvlngth[pixmin]
 		λmax = wvlngth[pixmax]
 		@reset profile.λbnd = [λmin, λmax]
@@ -29,7 +33,7 @@ function gravi_compute_wavelength_bounds(spectra::Dict{String, ConcreteWeightedD
 		spectra_array[2*i] 	 = key2 => WeightedData(spectra[key2],pixmin:pixmax)
 	end
 	return Dict(pr_array),Dict(spectra_array)
-
+	
 end
 
 
