@@ -120,7 +120,7 @@ function gravi_extract_model(	data::AbstractWeightedData{T,N},
 end
 
 
-function gravi_extract_profile(	data::AbstractWeightedData{T,N},
+function gravi_extract_profile(data::AbstractWeightedData{T,N},
 								profile::SpectrumModel{A,B,C,D}; 
 								restrict=0.01, 
 								nonnegative=false, 
@@ -134,7 +134,7 @@ function gravi_extract_profile(	data::AbstractWeightedData{T,N},
 	else
 		(;val, precision) = view(data,bbox)
 	end
-	model =  get_profile(profile)
+	model =  T.(get_profile(profile))
 	if restrict>0
 		#model .*= (model .> restrict)
 		precision .*=  (model .> restrict)
@@ -167,13 +167,13 @@ function gravi_extract_profile(	data::AbstractWeightedData{T,N},
 		end
 		wd = WeightedData(positive .* α, positive .* αprecision)
 	end
-	return wd / profile.flat
+	return wd / T.(profile.flat)
 end
 
 function gravi_extract_profile(	data::AbstractWeightedData{T,N},	
 								profile::AbstractDict; 
 								kwds...) where {T,N}
-	profiles = Dict{String,ConcreteWeightedData{Float64,1}}()
+	profiles = Dict{String,ConcreteWeightedData{T,1}}()
 	for (key,val) ∈ profile
 		push!(profiles,key=>gravi_extract_profile(data ,val; kwds...))
 	end

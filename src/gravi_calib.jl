@@ -43,7 +43,7 @@ function gravi_compute_transmissions(  spectra::Dict{String, ConcreteWeightedDat
 										thrs=0.01,
 										kwds...) where {T,N,A,B,C<:Interpolator,D} 
 	if (D <: Number) 
-		pr_array = Vector{Pair{String,SpectrumModel{A,B,C,Vector{Float64}}}}(undef,length(profiles))
+		pr_array = Vector{Pair{String,SpectrumModel{A,B,C,Vector{T}}}}(undef,length(profiles))
 	else
 		pr_array = Vector{Pair{String,SpectrumModel{A,B,C,D}}}(undef,length(profiles))
 	end		
@@ -66,7 +66,7 @@ function gravi_compute_transmissions(  spectra::Dict{String, ConcreteWeightedDat
 						gravi_fit_transmission( view(spectra[key2], good),lmp,BSp2, wvgood; kwds...)]
 		@reset profile.transmissions = transmissions
 
-		flat = ones(Float64,length(spectra[key1]))
+		flat = ones(T,length(spectra[key1]))
 		flat[good] .= ((view(spectra[key1],good) / (profile.transmissions[1].(wvgood).* lmp) + view(spectra[key2],good) / (profile.transmissions[2].(wvgood).* lmp))/2).val
 		flat[flat.==0] .= 1
 		@reset profile.flat = flat
@@ -79,14 +79,15 @@ function gravi_compute_transmissions(  spectra::Dict{String, ConcreteWeightedDat
 end
 
 function gravi_init_transmissions(profiles::Dict{String,SpectrumModel{A,B,C,D}};
+									T=Float64,
 									nb_transmission_knts=20,
-									kernel = CatmullRomSpline(),
+									kernel = CatmullRomSpline{T}(),
 									kwds...
 									) where {A,B,C,D} 
 									
 	λmin = minimum([max(p.λbnd[1],	minimum(filter!(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
 	λmax = maximum([min(p.λbnd[2],	maximum(filter!(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
-	knt =  range(λmin,λmax,nb_transmission_knts)
+	knt =  range(T(λmin),T(λmax),nb_transmission_knts)
 
 
 
@@ -123,10 +124,10 @@ function gravi_compute_lamp(spectra::Dict{String, S},
 							profiles::Dict{String,SpectrumModel{A,B,C,D}};
 							nb_lamp_knts=360,
 							init_lamp = nothing,
-							kernel = CatmullRomSpline(),
+							kernel = CatmullRomSpline{T}(),
 							kwds...) where {T,A,B,C<:Interpolator,D,S<:AbstractWeightedData{T, 1}} 
 	
-	data_trans = Vector{@NamedTuple{spectrum::WeightedData{Float64,1,SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false},SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false}},
+	data_trans = Vector{@NamedTuple{spectrum::WeightedData{T,1,SubArray{T, 1, Vector{T}, Tuple{Vector{Int64}}, false},SubArray{T, 1, Vector{T}, Tuple{Vector{Int64}}, false}},
 									transmission::Vector{Float64},wavelength::B}}(undef,length(spectra))	
 	for (i,(key,spectrum)) ∈ enumerate(spectra)		
 		profile = profiles[ key[3:end]]
@@ -164,13 +165,13 @@ end
 
 
 
-function gravi_extract_profile_flats_from_p2vm(	P2VM::Dict{String, WeightedData{T, 2,A,B}}, 
+function gravi_extract_profile_flats_from_p2vm(	P2VM::Dict{String, ConcreteWeightedData{T, 2}}, 
 												dark::AbstractWeightedData{T,N},
 												profiles::AbstractDict; 
 												kwds...
-											) where {T,N,A,B}
+											) where {T,N}
 
-	spctr = Dict{String,ConcreteWeightedData{Float64,1}}()
+	spctr = Dict{String,ConcreteWeightedData{T,1}}()
 	
 	for (baseline,data) ∈ P2VM
 		tel1 = baseline[5]

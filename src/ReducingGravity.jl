@@ -324,9 +324,9 @@ function gravi_compute_lamp_transmissions(	spectra::Dict{String, ConcreteWeighte
 
 	profiles,spectra = gravi_compute_wavelength_bounds(spectra,profiles)
 	if C==Nothing || restart
-		profiles =gravi_init_transmissions(profiles;	nb_transmission_knts=nb_transmission_knts,kwds...)
+		profiles = gravi_init_transmissions(profiles;T=T,	nb_transmission_knts=nb_transmission_knts,kwds...)
 	elseif nb_transmission_knts != (length(first(values(profiles)).transmissions[1].coefs)) 
-		profiles =gravi_init_transmissions(profiles;	nb_transmission_knts=nb_transmission_knts,kwds...)
+		profiles = gravi_init_transmissions(profiles;T=T,	nb_transmission_knts=nb_transmission_knts,kwds...)
 	end
 	
 	for i ∈ 1:loop
