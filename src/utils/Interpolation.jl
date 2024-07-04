@@ -9,7 +9,7 @@ function build_interpolation_matrix(kernel::Kernel{T,N}, knots, samples) where {
 	col = length(knots) 
 	K = zeros(T,lin,col)
  	for (l,sample) ∈ enumerate(samples)
-		off, weights = InterpolationKernels.compute_offset_and_weights(kernel,find_index(knots,sample)) 
+		off, weights = InterpolationKernels.compute_offset_and_weights(kernel,T.(find_index(knots,sample))) 
 		off = Int(off)
 		mx = off + N
 		if off < 0 
