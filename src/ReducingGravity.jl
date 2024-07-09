@@ -37,6 +37,7 @@ export 	gravi_data_create_bias_mask,
 		gravi_compute_lamp_transmissions,
 		gravi_build_p2vm_interf,
 		gravi_build_V2PM,
+		gravi_compute_ron,
 		WeightedData,
 		AbstractWeightedData,
 		ConcreteWeightedData,
@@ -249,29 +250,33 @@ end
 function gravi_create_weighteddata(	data::AbstractArray{T,3},
 									illuminated::BitMatrix,
 									goodpix::BitMatrix, 
-									rov,
-									gain;
+									gain,
+									ron;
 									cleanup=true,
-									dark = T(0),
-									bias=T(20),
+									keepbias=true,
 									bndbox = CartesianIndices(goodpix),
 									kwd...) where T
 	
 
 	if cleanup
-		bias = gravi_data_detector_cleanup!(data,illuminated)
+		bias = gravi_data_detector_cleanup!(data,illuminated,keepbias=keepbias)
 	end
-	data = view(data .- dark,bndbox,:)
-	rov = view(rov,bndbox.indices[1])
+	data = view(data ,bndbox,:)
 	gain = view(gain,bndbox.indices[1])
 	goodpix = view(goodpix,bndbox)
 	avg = data.*goodpix
-	wgt = goodpix ./ (rov .+ gain .\ max.(0,avg .+ bias) )
+	wgt = goodpix ./ (ron .+ gain .\ max.(zero(T),avg) .+ T(1/12) )
 
 	#avg[.!(goodpix)] .= zero(T)
 	#wgt[.!(goodpix)] .= zero(T)
-	weighteddata = WeightedData(avg,wgt)
+	weighteddata = WeightedData(avg,wgt) 
 	return weighteddata
+end
+
+function gravi_compute_ron(	dark::AbstractWeightedData,
+	goodpix::BitMatrix, 
+	gain) 
+	return goodpix ./dark.precision .- dark.val ./ gain
 end
 
 function gravi_compute_profile(	flats::Vector{ConcreteWeightedData{T,N}},
@@ -319,7 +324,7 @@ function gravi_compute_lamp_transmissions(	spectra::Dict{String, ConcreteWeighte
 										nb_transmission_knts=20,
 										nb_lamp_knts=400,
 										restart=false,		
-										Chi2=  0.5,							
+										Chi2=  1.0,							
 										kwds...) where {T,N,A,B,C,D} 
 
 	profiles,spectra = gravi_compute_wavelength_bounds(spectra,profiles)

@@ -47,21 +47,22 @@ fwave = FITS(first(filter(x -> (occursin(r"(WAVE,LAMP)", x.second.type) ), flist
 wave =read(fwave["IMAGING_DATA_SC"]);
 wave,goodpix  = gravi_create_weighteddata(wave,illuminated,goodpix)
 
-profiles = gravi_spectral_calibration(wave,darkwave, profiles; nonnegative=true, robust=false)
+profiles = gravi_spectral_calibration(wave,darkwave, profiles; nonnegative=true, robust=false);
 
 
 
 
 
-#gain, rov = gravi_compute_gain_from_p2vm(flats,darkp2vm,profiles,goodpix)
+gain, rov = gravi_compute_gain_from_p2vm(flats,darkp2vm,profiles,goodpix)
 #spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkp2vm, profiles; nonnegative=true, robust=true)
 # TODO To be adapted once the sorted gravi_compute_gain_from_p2vm works
-darkp2vm, gain, rov = gravi_compute_gain_from_p2vm(P2VMwd,profiles,goodpix)
-spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkp2vm,profiles; nonnegative=true, robust=false)
+#darkp2vm, gain, rov = gravi_compute_gain_from_p2vm(P2VMwd,profiles,goodpix)
+#spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkp2vm,profiles; nonnegative=true, robust=false)
+spctr = gravi_extract_profile_flats_from_p2vm(flats.-[darkp2vm],chnames,profiles)
 profiles, lamp = gravi_compute_lamp_transmissions(  spctr, profiles; nb_transmission_knts=40,nb_lamp_knts=360)
 
-
-wd = gravi_create_weighteddata(p2vm, illuminated,goodpix,rov, gain)
+ron = gravi_compute_ron(darkp2vm,goodpix,gain)
+wd = gravi_create_weighteddata(p2vm, illuminated,goodpix, gain,ron)
 baseline_phasors, baseline_visibilities = gravi_build_p2vm_interf(wd - darkp2vm,profiles,lamp; loop_with_norm=10, loop=2)
 S,tλ,wvidx = gravi_build_V2PM(profiles,baseline_phasors;λmin=2e-6,λmax=2.5e-6)
 #wdp = ReducingGravity.make_pixels_vector(view(p12,:,:,100) - darkflat,profiles,wvidx);
