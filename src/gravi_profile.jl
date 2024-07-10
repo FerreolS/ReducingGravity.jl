@@ -121,12 +121,12 @@ end
 
 
 function gravi_extract_profile(data::AbstractWeightedData{T,N},
-								profile::SpectrumModel{A,B,C,D}; 
+								profile::SpectrumModel; 
 								restrict=0.01, 
 								nonnegative=false, 
 								robust=false,
 								kwds...
-								) where {T,N,A,B,C,D}
+								) where {T,N}
 	#bbox = profile.bbox
 	bbox = CartesianIndices((get_wavelength_bounds_inpixels(profile),profile.bbox.indices[2]))
 	if  ndims(bbox)<N

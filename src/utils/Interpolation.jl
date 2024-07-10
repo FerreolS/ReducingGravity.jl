@@ -76,14 +76,16 @@ function compute_coefs(I::Interpolator, x,A::AbstractWeightedData; Chi2 =nothing
 	end
 
 function compute_coefs((;kernel, knots)::Interpolator, x,A::AbstractWeightedData,Chi2::Float64)
+	T = eltype(kernel)
 	(;val, precision) = A
 	N = sum(precision .>0)
 	K = build_interpolation_matrix(kernel,knots,x)
 	R = build_interpolation_matrix(kernel',knots,x)
 	KK = Hermitian(K' * (precision .* K))
 	RR = Hermitian(R'*R)
+	
 	function f(μ)
-		C = Hermitian( KK .+ (10.0.^μ) .* RR)
+		C = Hermitian( KK .+ T(10.0.^μ) .* RR)
 		F = cholesky(C; check=false)
 		if issuccess(F)
 			out =   F \ K' * (precision .* val)
@@ -113,7 +115,7 @@ function compute_coefs((;kernel, knots)::Interpolator, x,A::AbstractWeightedData
 	end	
 	(μ, f1, lo1, hi1, n1)  = OptimPackNextGen.Brent.fzero(f,a,fa,b,fb)
 	@debug	μ, f1, lo1, hi1, n1
-	C = Hermitian( KK .+ (10.0.^μ).* RR)
+	C = Hermitian( KK .+ T(10.0.^μ).* RR)
 	F = cholesky(C; check=false)
 	if issuccess(F)
 		return F \ K' * (precision .* val)

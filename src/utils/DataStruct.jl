@@ -2,15 +2,15 @@
 
 
 
-struct InterpolatedSpectrum{B}
-	coefs::Vector{Float64}
+struct InterpolatedSpectrum{T,B}
+	coefs::Vector{T}
 	basis::B
 end
 
 #(self::InterpolatedSpectrum{B})(x) where B<:BSplineBasis = Spline(self.basis,self.coefs)(x)
 #(self::InterpolatedSpectrum{B})() where B<:BSplineBasis = Spline(self.basis,self.coefs)
 
-function (self::InterpolatedSpectrum{B})(x) where B<:Interpolator
+function (self::InterpolatedSpectrum{T,B})(x) where {T,B<:Interpolator}
 	(;knots, kernel) = self.basis
 	notnan = isfinite.(x)
 	if any(notnan)
@@ -23,7 +23,8 @@ function (self::InterpolatedSpectrum{B})(x) where B<:Interpolator
 		return basis*self.coefs
 	end
 end
-function (self::InterpolatedSpectrum{B})(x::Number) where B<:Interpolator
+
+function (self::InterpolatedSpectrum{T,B})(x::Number) where {T,B<:Interpolator}
 	!isfinite(x) && return x 
 	(;knots, kernel) = self.basis
 	x = min(x,knots[end])
@@ -44,17 +45,17 @@ end
  =#
 
 
-struct SpectrumModel{A,B,C,D}
+struct SpectrumModel{A,B,C,D,T}
 	center::Vector{Float64}
 	σ::Matrix{Float64}
 	λ::B
 	λbnd::Vector{Float64}
-	transmissions::Vector{InterpolatedSpectrum{C}}
+	transmissions::Vector{InterpolatedSpectrum{T,C}}
 	flat::D
 	bbox::A
 end
 
-function ((;center,σ)::SpectrumModel{A,Nothing,B,D})(p) where {A,B,D}
+function ((;center,σ)::SpectrumModel{A,Nothing,B,D,E})(p) where {A,B,D,E}
 	cdeg = length(center)
 	cp =  p .^(0:(cdeg-1))'* center
 	σdeg = length(σ)
@@ -64,7 +65,7 @@ function ((;center,σ)::SpectrumModel{A,Nothing,B,D})(p) where {A,B,D}
 	return (;center=cp[1],σ=σp)#,λ=λp[1])
 end
 
-function get_center(s::SpectrumModel{A,B,C,D}) where {A,B,C,D}
+function get_center(s::SpectrumModel{A,B,C,D,E}) where {A,B,C,D,E}
 	(;center,bbox) = s 
  	if C == Nothing
 		p = bbox.indices[1]
@@ -82,7 +83,7 @@ function get_width((;σ,bbox)::SpectrumModel)
 end
 
 
-get_wavelength(::SpectrumModel{A,Nothing,B,D},kwds...) where {A,B,D} = nothing
+get_wavelength(::SpectrumModel{A,Nothing,B,D,E},kwds...) where {A,B,D,E} = nothing
 
 function get_wavelength((;λ)::SpectrumModel,p;kwds...)
 	λdeg = length(λ)
@@ -103,9 +104,9 @@ function get_wavelength((;λ,λbnd, bbox)::SpectrumModel; bnd=true)
 
 	return wv
 end
-get_wavelength_bounds_inpixels((;bbox)::SpectrumModel{A,Nothing,C,D}) where {A,C,D} = bbox.indices[1]
+get_wavelength_bounds_inpixels((;bbox)::SpectrumModel{A,Nothing,C,D,E}) where {A,C,D,E} = bbox.indices[1]
 
-function get_wavelength_bounds_inpixels((;λ,λbnd, bbox)::SpectrumModel{A,B,C,D}) where {A,B,C,D}
+function get_wavelength_bounds_inpixels((;λ,λbnd, bbox)::SpectrumModel{A,B,C,D,E}) where {A,B,C,D,E}
 	p = bbox.indices[1]
 	λdeg = length(λ)	
 	wv = p .^(0:(λdeg-1))'* λ
@@ -157,7 +158,7 @@ function (self::ProfileModel{A1,P})(;center=[0.0],σ=[1.0],amplitude=[1.0]) wher
 	return ampy .* exp.(-1 ./ 2 .*((cy .- ay')./ sy).^2)
 end
 
-(self::ProfileModel)((;center,σ)::SpectrumModel{A,Nothing,B,D}) where {A,B,D} = self(;center=center, σ=σ)
+(self::ProfileModel)((;center,σ)::SpectrumModel{A,Nothing,B,D,E}) where {A,B,D,E} = self(;center=center, σ=σ)
 
 function get_profile(profile::SpectrumModel) 
 	(;center,σ) = profile
@@ -180,10 +181,10 @@ function get_profile(profile::SpectrumModel)
 end
 
 
-function get_profile(s::SpectrumModel{A,Nothing,B,D}) where {A,B,D}
+function get_profile(s::SpectrumModel{A,Nothing,B,D,E}) where {A,B,D,E}
 	ProfileModel(s.bbox)(;s.center,s.σ)
 end
 
-function get_profile(s::SpectrumModel{A,Nothing,B,D},bndbox) where {A,B,D}
+function get_profile(s::SpectrumModel{A,Nothing,B,D,E},bndbox) where {A,B,D,E}
 	ProfileModel(bndbox)(;s.center,s.σ)
 end
