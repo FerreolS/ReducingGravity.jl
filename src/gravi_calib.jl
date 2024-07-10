@@ -322,7 +322,7 @@ function gravi_compute_gain_from_p2vm(	flats::Vector{C},
 										goodpix::BitMatrix; 
 										restrict=0.0, 
 										fix_gain=true,
-										substract_dark = true,
+										substract_dark = false,
 										kwds...
 										) where {T,C<:ConcreteWeightedData{T, 2}}
 											

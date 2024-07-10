@@ -276,7 +276,7 @@ end
 function gravi_compute_ron(	dark::AbstractWeightedData,
 	goodpix::BitMatrix, 
 	gain) 
-	return goodpix ./dark.precision .- dark.val ./ gain
+	return goodpix .* (1 ./dark.precision .- dark.val ./ gain)
 end
 
 function gravi_compute_profile(	flats::Vector{ConcreteWeightedData{T,N}},
