@@ -43,7 +43,7 @@ build_interpolation_matrix((;knots,kernel)::Interpolator, samples) = build_inter
 end =#
 
 function find_index(knots::StepRangeLen,sample)
-	return (sample  - first(knots)) /step(knots) 
+	return (sample  - first(knots)) /step(knots) +1
 end
 
 function compute_coefs((;kernel, knots)::Interpolator, x,y)
