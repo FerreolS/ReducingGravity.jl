@@ -10,7 +10,7 @@ end
 #(self::InterpolatedSpectrum{B})(x) where B<:BSplineBasis = Spline(self.basis,self.coefs)(x)
 #(self::InterpolatedSpectrum{B})() where B<:BSplineBasis = Spline(self.basis,self.coefs)
 
-function (self::InterpolatedSpectrum{T,B})(x) where {T,B<:Interpolator}
+function (self::InterpolatedSpectrum{T,B})(x::AbstractVector{T2}) where {T,B<:Interpolator,T2<:Number}
 	(;knots, kernel) = self.basis
 	notnan = isfinite.(x)
 	if any(notnan)
@@ -24,8 +24,8 @@ function (self::InterpolatedSpectrum{T,B})(x) where {T,B<:Interpolator}
 	end
 end
 
-function (self::InterpolatedSpectrum{T,B})(x::Number) where {T,B<:Interpolator}
-	!isfinite(x) && return x 
+function (self::InterpolatedSpectrum{T,B})(x::T2) where {T,B<:Interpolator,T2<:Number}
+	!isfinite(x) && return T(x) 
 	(;knots, kernel) = self.basis
 	x = min(x,knots[end])
 	x = max(x,knots[1])
