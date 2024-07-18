@@ -48,7 +48,7 @@ end
 
 function compute_coefs((;kernel, knots)::Interpolator, x,y)
 	K = build_interpolation_matrix(kernel,knots,x)
-	C = Hermitian(K'*K)
+	C = Symmetric(K'*K)
     F = cholesky(C; check=false)
     if issuccess(F)
         return   F \ K' * y
@@ -57,17 +57,41 @@ function compute_coefs((;kernel, knots)::Interpolator, x,y)
     end
 end
 
-function compute_coefs((;kernel, knots)::Interpolator, x,y,w)
+function compute_coefs((;kernel, knots)::Interpolator, 
+						x,
+						y::AbstractArray{T,N},
+						w::AbstractArray{T,N}) where {T,N}
+						
 	K = build_interpolation_matrix(kernel,knots,x)
-	C = Hermitian(K' * (w .* K))
+	return compute_coefs(K,y,w)
+
+end
+
+function compute_coefs(K::AbstractMatrix,
+						y::AbstractVector,
+						w::AbstractVector) 
+	C = Symmetric(K' * (w .* K) )
     F = cholesky(C; check=false)
     if issuccess(F)
         return   F \ K' * (w .* y)
     else
         return Symmetric(pinv(C)) *  K' * (w .* y)
-    end
+    end			
 end
- 	
+
+
+function compute_coefs(K::AbstractMatrix,
+						y::AbstractMatrix,
+						w::AbstractMatrix) 
+						
+	out = similar(y,(size(K,2),size(y,2)))
+	@inbounds @simd for i ∈ axes(y,2)
+		out[:,i] .= compute_coefs(K,y[:,i],w[:,i])
+	end	
+	return out	
+end
+
+compute_coefs(K::AbstractMatrix,(;val,precision)::AbstractWeightedData) = compute_coefs(K,val, precision)
 
 
 function compute_coefs(I::Interpolator, x,A::AbstractWeightedData; Chi2 =nothing)
@@ -75,23 +99,23 @@ function compute_coefs(I::Interpolator, x,A::AbstractWeightedData; Chi2 =nothing
 		return compute_coefs(I, x,A,Chi2)
 	end
 
-function compute_coefs((;kernel, knots)::Interpolator, x,A::AbstractWeightedData,Chi2::Float64)
+function compute_coefs((;kernel, knots)::Interpolator, x,A::AbstractWeightedData,Chi2::Float64) 
 	T = eltype(kernel)
 	(;val, precision) = A
 	N = sum(precision .>0)
 	K = build_interpolation_matrix(kernel,knots,x)
-	R = build_interpolation_matrix(kernel',knots,x)
-	KK = Hermitian(K' * (precision .* K))
-	RR = Hermitian(R'*R)
-	
+	#R = build_interpolation_matrix(kernel',knots,x)
+	KK = Symmetric(K' * (precision .* K))
+	RR = make_DtD(T,size(KK,1))
+	B = K' * (precision .* val)
 	function f(μ)
-		C = Hermitian( KK .+ T(10.0.^μ) .* RR)
+		C = Symmetric( KK .+ T(10.0.^μ) .* RR)
 		F = cholesky(C; check=false)
 		if issuccess(F)
-			out =   F \ K' * (precision .* val)
+			out =   F \ B # (K' * (precision .* val))
 			return likelihood(A,K*out) ./ N - Chi2
 		else
-			out = Symmetric(pinv(C)) *  K' * (precision .* val)
+			out = Symmetric(pinv(C)) * B
 			return likelihood(A,K*out) ./ N - Chi2
 		end
 	end
@@ -100,9 +124,9 @@ function compute_coefs((;kernel, knots)::Interpolator, x,A::AbstractWeightedData
 	if fa > 0
 		F = cholesky(KK; check=false)
 		if issuccess(F)
-			return F \ K' * (precision .* val)
+			return F \B
 		else
-			return Symmetric(pinv(KK)) *  K' * (precision .* val)
+			return Symmetric(pinv(KK)) *  B
 		end
 	end
 	b= 1.
@@ -115,11 +139,25 @@ function compute_coefs((;kernel, knots)::Interpolator, x,A::AbstractWeightedData
 	end	
 	(μ, f1, lo1, hi1, n1)  = OptimPackNextGen.Brent.fzero(f,a,fa,b,fb)
 	@debug	μ, f1, lo1, hi1, n1
-	C = Hermitian( KK .+ T(10.0.^μ).* RR)
+	C = Symmetric( KK .+ T(10.0.^μ).* RR)
 	F = cholesky(C; check=false)
 	if issuccess(F)
-		return F \ K' * (precision .* val)
+		return F \ B
 	else
-		return Symmetric(pinv(C)) *  K' * (precision .* val)
+		return Symmetric(pinv(C)) *  B
 	end
+end
+
+
+function make_DtD(T::DataType,n)
+	diag0 = Vector{T}(undef,n)
+	fill!(diag0,T(2))
+	diag0[1] = T(1)
+	diag0[end] = T(1)
+	diag1 = Vector{T}(undef,n-1)
+	fill!(diag1,T(-1))
+	V = vcat(diag0,diag1,diag1)
+	I = vcat(1:n,2:n,1:(n-1))
+	J = vcat(1:n,1:(n-1),2:n)
+	sparse(I, J, V)
 end
