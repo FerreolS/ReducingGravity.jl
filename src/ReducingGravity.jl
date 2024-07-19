@@ -19,7 +19,8 @@ using 	FITSIO,
 		InterpolationKernels,
 		SparseArrays,
 		KrylovKit,
-		PRIMA
+		PRIMA,
+		Tullio
 
 import 	ImageFiltering: mapwindow
 

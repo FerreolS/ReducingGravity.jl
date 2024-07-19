@@ -59,11 +59,17 @@ gain, rov = gravi_compute_gain_from_p2vm(flats,darkp2vm,profiles,goodpix)
 #darkp2vm, gain, rov = gravi_compute_gain_from_p2vm(P2VMwd,profiles,goodpix)
 #spctr = gravi_extract_profile_flats_from_p2vm(P2VMwd , darkp2vm,profiles; nonnegative=true, robust=false)
 spctr = gravi_extract_profile_flats_from_p2vm(flats.-[darkp2vm],chnames,profiles)
-profiles, lamp = gravi_compute_lamp_transmissions(  spctr, profiles; nb_transmission_knts=40,nb_lamp_knts=360)
+#profiles, lamp = gravi_compute_lamp_transmissions(  spctr, profiles; nb_transmission_knts=50,nb_lamp_knts=300, Chi2=1.)
+profiles, lamp = gravi_compute_lamp_transmissions(  spctr, profiles; nb_transmission_knts=300,nb_lamp_knts=300, Chi2=0.5,restart=true)
 
 ron = gravi_compute_ron(darkp2vm,goodpix,gain)
 wd = gravi_create_weighteddata(p2vm, illuminated,goodpix, gain,ron)
-baseline_phasors, baseline_visibilities = gravi_build_p2vm_interf(wd - darkp2vm,profiles,lamp; loop_with_norm=10, loop=2)
+tλ = ReducingGravity.build_wavelength_range(profiles)
+
+tλ4 = tλ[1:4:end]
+itrp4 = ReducingGravity.Interpolator(tλ4,CatmullRomSpline{Float32}())
+baseline_phasors, baseline_visibilities =  gravi_build_p2vm_interf(wd - darkp2vm,itrp4, profiles,lamp;loop_with_norm=3,loop=5, rgl_phasor=2,rgl_vis=2)
+#gravi_build_p2vm_interf(wd - darkp2vm,profiles,lamp; loop_with_norm=10, loop=2)
 S,tλ,wvidx = gravi_build_V2PM(profiles,baseline_phasors;λmin=2e-6,λmax=2.5e-6)
 #wdp = ReducingGravity.make_pixels_vector(view(p12,:,:,100) - darkflat,profiles,wvidx);
 

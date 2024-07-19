@@ -33,6 +33,107 @@ function gravi_estimate_ABCD_phasor(ϕ::AbstractArray{T,1},A,B,C,D) where T
 	return (pA,pB,pC,pD)
 end =#
 
+function gravi_estimate_ABCD_phasor(H::AbstractArray{T,N},channels) where {T,N}
+	if N==1
+		cϕ = cos.(H)
+		sϕ = sin.(H) # sign?
+		H = hcat(cϕ,sϕ)
+	end
+	#H[:,2] .*=-1
+	for c in instances(Chnl)
+		pA = build_phase(H,channels[c])
+	end
+
+	pA = build_phase(H,A)
+	pB = build_phase(H,B)
+	pC = build_phase(H,C)
+	pD = build_phase(H,D)
+	return (pA,pB,pC,pD)
+end
+
+function gravi_build_ABCD_phasors!(phasors,ϕ::AbstractArray{T,N},A,KA,B,KB,C,KC,D,KD;kwds...) where {T,N}
+
+	phasors[:,:,1] .= solve_phasor(ϕ,KA,A;kwds...)
+	phasors[:,:,2] .= solve_phasor(ϕ,KB,B;kwds...)
+	phasors[:,:,3] .= solve_phasor(ϕ,KC,C;kwds...)
+	phasors[:,:,4] .= solve_phasor(ϕ,KD,D;kwds...)
+	return phasors
+end
+
+function gravi_build_ABCD_phasors(ϕ::AbstractArray{T,N},A,KA,B,KB,C,KC,D,KD;kwds...) where {T,N}
+	phasors = zeros(T,2,size(ϕ,1),4)
+	gravi_build_ABCD_phasors!(phasors,ϕ,A,KA,B,KB,C,KC,D,KD;kwds...)
+end
+
+
+function solve_phasor(phi::AbstractArray{T,N}, 
+					K,
+					(;val, precision)::AbstractWeightedData;
+					rgl_phasor = T(1e-3),
+					kwds...) where {T,N}
+	if N==2
+		H = similar(phi,size(K,1),2,size(phi,2))
+		#= @inbounds @simd for j ∈ axes(phi,2)
+			sp = similar(phi,size(K,2))
+			cp = similar(phi,size(K,2))
+			@inbounds @simd for i ∈ axes(phi,1)
+				sp[i], cp[i] = sincos(phi[i,j])
+			end
+			H[:,1,:] .= K * cp
+			H[:,2,:] .= K * sp
+		end =#
+		@tullio H[ll, 1, t] = cos(phi[c, t]) * K[ll, c]
+		@tullio H[ll, 2, t] = sin(phi[c, t]) * K[ll, c]
+	else
+		@tullio H[ll, k, t] := phi[c, k, t] * K[ll, c]
+	end
+
+	#@tullio C[k, c, ll, t] := H[ll, t, k] * K[ll, c]
+	@tullio C[ll, t,k,c] := H[ll, k,t] * K[ll, c]
+	CC = reshape(C,size(C,1)*size(C,2),:)
+
+
+	HtH = Symmetric(CC'*(precision[:].*CC) .+ rgl_phasor .* make_DtD(T,size(CC,2)))
+	#HtH .+= diagm(1.e-3.*ones(size(HtH,1)))
+	F = cholesky(HtH; check=false)
+	if issuccess(F)
+		v = F \ (CC'*(precision[:].*val[:]))
+	else
+
+		@show "phasors not cholesky $rgl"
+		v = pinv(Array(HtH)) * (CC'*(precision[:].*val[:]))
+	end
+	@debug "phasor lkl : $(likelihood(WeightedData(val[:], precision[:]),CC*v )./length(val))"
+
+	#v[.!isfinite.(v)] .= T(0)
+
+	#return reshape(pinv(CC'*(precision[:].*CC))*CC'*(precision[:].*val[:]),2, :)
+	return  reshape(v,2, :)
+end
+
+function solve_phasor_opt(phi::AbstractArray{T,N}, 
+					K,
+					(;val, precision)::AbstractWeightedData,
+					xinit;
+					kwds...) where {T,N}
+	if N==2
+		H = cat(K*cos.(phi),K*sin.(phi),dims=3)
+	else
+		@tullio H[ll, t, k] := phi[c, t, k] * K[ll, c]
+	end
+
+	@tullio C[k, c, ll, t] := H[ll, t, k] * K[ll, c]
+	d = similar(val)
+ 	function fg!(x,g)
+		@tullio d[ll,t] = C[k,c,ll,t] * x[k,c]
+       r =(d .- val)
+       rp = precision.*r 
+	   @tullio g[k,c] = C[k,c,ll,t] * rp[ll,t]
+       return sum(r.*rp)
+	end
+	# @tullio x0[k,c] := C[ k,c,ll,t] * val[ll,t]
+	return vmlmb(fg!,  xinit ;kwds...)
+end
 function gravi_estimate_ABCD_phasor(H::AbstractArray{T,N},A,B,C,D) where {T,N}
 	if N==1
 		cϕ = cos.(H)
@@ -55,6 +156,17 @@ function gravi_initial_input_phase(A,B,C,D)
 	end
 	return ϕ
 end
+
+function gravi_initial_input_phase(A,KA,B,KB,C,KC,D,KD)
+	cA = compute_coefs(KA,A)
+	cB = compute_coefs(KB,B)
+	cC = compute_coefs(KC,C)
+	cD = compute_coefs(KD,D)
+    ϕ = atan.(cD.-cB,cC .-cA )
+
+	return ϕ
+end
+
 
 function build_phase(H,data)
 	p  = data.precision
@@ -144,6 +256,132 @@ function estimate_visibility(phasors,A,B,C,D;
 	return phase
 end
 
+
+
+function solve_visibility_opt(visibilities,phasors,KA,KB,KC,KD,A,B,C,D;maxeval=100,kwds...)
+	OA1 = KA.*phasors[1,:,1]'
+	OA2 = KA.*phasors[2,:,1]'
+
+	OB1 = KB.*phasors[1,:,2]'
+	OB2 = KB.*phasors[2,:,2]'
+
+	OC1 = KC.*phasors[1,:,3]'
+	OC2 = KC.*phasors[2,:,3]'
+
+	OD1 = KD.*phasors[1,:,4]'
+	OD2 = KD.*phasors[2,:,4]'
+	#phase =zeros(Float64,2,size(KA,2),size(A,2))
+
+
+ 	function fg!(x,g)
+		r = OA1*x[:,1,:] .+ OA2*x[:,2,:] .- A.val 
+		rp = A.precision.*r
+		g[:,1,:] .= OA1'*rp
+		g[:,2,:] .= OA2'*rp
+		cost = sum(r.*rp)
+
+		r = OB1*x[:,1,:] .+ OB2*x[:,2,:] .- B.val 
+		rp = B.precision.*r
+		g[:,1,:] .+= OB1'*rp
+		g[:,2,:] .+= OB2'*rp
+		cost += sum(r.*rp)
+
+		r =  OC1*x[:,1,:] .+ OC2*x[:,2,:] .- C.val 
+		rp = C.precision.*r
+		g[:,1,:] .+= OC1'*rp
+		g[:,2,:] .+= OC2'*rp
+		cost += sum(r.*rp)
+
+		r =  OD1*x[:,1,:] .+ OD2*x[:,2,:] .- D.val 
+		rp = D.precision.*r
+		g[:,1,:] .+= OD1'*rp
+		g[:,2,:] .+= OD2'*rp
+		cost += sum(r.*rp)
+
+       return cost
+	end
+
+	function f(x)
+		r = A.val .- OA1*x[:,:,1] .- OA2*x[:,:,2]
+		rp = A.precision.*r
+		costA = sum(r.*rp)
+
+		r = B.val .- OB1*x[:,:,1] .- OB2*x[:,:,2]
+		rp = B.precision.*r
+		costB = sum(r.*rp)
+
+		r = C.val .- OC1*x[:,:,1] .- OC2*x[:,:,2]
+		rp = C.precision.*r
+		costC = sum(r.*rp)
+
+		r = D.val .- OD1*x[:,:,1] .- OD2*x[:,:,2]
+		rp = D.precision.*r
+		costD = sum(r.*rp)
+
+       return costA+costB+costC+costD
+	end
+	return vmlmb(fg!,  visibilities ;maxeval=maxeval,kwds...	)
+	#return vmlmb(f,  xinit ;autodiff=true,maxeval=maxeval,verb=verb,xtol=(0.,0.)	)
+
+	
+end
+
+
+
+function solve_visibility(phasors::AbstractArray{T,N},KA,KB,KC,KD,A,B,C,D;
+							rgl_vis=1e-3,
+							kwds...) where {T,N}
+	nl = size(KA,2)
+	nt = size(A,2)
+	visibilities = similar(phasors,nl,2,nt)
+	OA1 = KA.*phasors[1,:,1]'
+	OA2 = KA.*phasors[2,:,1]'
+	OA = hcat(OA1,OA2)
+	b = OA'*(A.precision.*A.val)
+
+	OB1 = KB.*phasors[1,:,2]'
+	OB2 = KB.*phasors[2,:,2]'
+	OB = hcat(OB1,OB2)
+	b .+= OB'*(B.precision.*B.val)
+
+	OC1 = KC.*phasors[1,:,3]'
+	OC2 = KC.*phasors[2,:,3]'
+	OC = hcat(OC1,OC2)
+	b .+= OC'*(C.precision.*C.val)
+
+	OD1 = KD.*phasors[1,:,4]'
+	OD2 = KD.*phasors[2,:,4]'
+	OD = hcat(OD1,OD2)
+	b .+= OD'*(D.precision.*D.val)
+
+	R = Array(rgl_vis  .* make_DtD(T,size(OD,2)) )
+	@debug "rgl_vis = $rgl_vis"
+	@inbounds for t ∈ axes(A,2)
+		HtH = OA'*(A.precision[:,t].*OA) 
+		HtH .+= OB'*(B.precision[:,t].*OB) 
+		HtH .+= OC'*(C.precision[:,t].*OC) 
+		HtH .+= OD'*(D.precision[:,t].*OD) 
+		HtH = (Symmetric(HtH) .+  R)
+		#HtH .+= diagm(1.e-3.*ones(size(HtH,1)))
+		F = cholesky(HtH; check=false)
+    	if issuccess(F)
+			#@show "Cholesky $t"
+        	v = F \ b[:,t]
+    	else
+			@show "visibilities not cholesky"
+        	v = pinv(HtH) * b[:,t]
+		end
+		#v[.!isfinite.(v)].=T(0)
+		visibilities[:,:,t] = reshape(v,nl,2)
+    end
+	@debug "vis lkl : $(likelihood(A,OA* reshape(visibilities,size(OA,2),:))./length(A))"
+	
+	return visibilities
+
+	
+end
+
+
 function gravi_build_p2vm_interf(p2vm_data,profiles,lamp;loop_with_norm=5,loop=5,baselines=baselines_list,ptol=1e-5)
 
 	baseline_phasors = Vector{Array{Float64,3}}(undef,6)
@@ -171,6 +409,63 @@ function gravi_build_p2vm_interf(p2vm_data,profiles,lamp;loop_with_norm=5,loop=5
 			phasors= gravi_build_ABCD_phasors(visibilities,A,B,C,D);
 			visibilities = estimate_visibility(phasors,A,B,C,D);
 			sum(abs2,filter(isfinite,(visibilities.-prev))) < ptol || break
+		end
+		baseline_phasors[i] = phasors
+		baseline_visibilities[i] = visibilities
+	end
+	return baseline_phasors, baseline_visibilities
+end
+
+function gravi_build_p2vm_interf(p2vm_data::AbstractWeightedData{T,N},
+								itrp, 
+								profiles,
+								lamp;
+								loop_with_norm=1,loop=1 ,baselines=baselines_list,ptol=1e-5,kwds...) where {T,N}
+
+	baseline_phasors = Vector{Array{T,3}}(undef,6)
+	baseline_visibilities = Vector{Array{T,3}}(undef,6)
+
+	Threads.@threads for (i,baseline) ∈ collect(enumerate(baselines))
+		T1,T2 = baseline
+		A = gravi_extract_channel(p2vm_data,profiles["$T1$T2-A-C"],lamp)
+		B = gravi_extract_channel(p2vm_data,profiles["$T1$T2-B-C"],lamp)
+		C = gravi_extract_channel(p2vm_data,profiles["$T1$T2-C-C"],lamp)
+		D = gravi_extract_channel(p2vm_data,profiles["$T1$T2-D-C"],lamp)
+
+		KA = build_interpolation_matrix(itrp,get_wavelength(profiles["$T1$T2-A-C"]))
+		KB = build_interpolation_matrix(itrp,get_wavelength(profiles["$T1$T2-B-C"]))
+		KC = build_interpolation_matrix(itrp,get_wavelength(profiles["$T1$T2-C-C"]))
+		KD = build_interpolation_matrix(itrp,get_wavelength(profiles["$T1$T2-D-C"]))
+
+		ϕ = gravi_initial_input_phase(A,KA,B,KB,C,KC,D,KD)
+		nt = size(ϕ,2)
+		phasors= gravi_build_ABCD_phasors(ϕ,A,KA,B,KB,C,KC,D,KD;kwds...)
+		#visibilities = cat(cos.(ϕ) ,sin.(ϕ),dims=3)
+
+		#visibilities = solve_visibility_opt(visibilities,phasors,KA,KB,KC,KD,A,B,C,D;kwds...)
+		visibilities = solve_visibility(phasors,KA,KB,KC,KD,A,B,C,D;kwds...)
+		#coherence = ones(T,nt)
+		#rho3 = similar(ϕ,size(ϕ)[1:2])
+		for _ ∈ 1:loop_with_norm
+			#rho3 = (ones(360) .* median(rho,dims=1))
+			#rho3 =  ones(size(visibilities,1)) .* median(rho,dims=1)
+			gravi_build_ABCD_phasors!(phasors,visibilities,A,KA,B,KB,C,KC,D,KD;kwds...)
+			visibilities = solve_visibility(phasors,KA,KB,KC,KD,A,B,C,D;kwds...)
+			rho = sqrt.(sum(abs2,visibilities,dims=2))
+			#= for i ∈ axes(ϕ,2)
+				coherence = fit_envellope(rho[30:230,i],itrp.knots[30:230].*1e6)
+				rho3[:,i] = coherence[2] .* envellope(coherence[1],itrp.knots.*1e6)
+			end  =#
+			rho3 =  ones(size(visibilities,1)) .* median(rho,dims=1)
+			visibilities .*= 1 ./ rho  .* rho3
+			visibilities[.!isfinite.(visibilities)] .= T(0)
+
+		end
+		for _ ∈ 1:loop  
+			prev = visibilities
+			gravi_build_ABCD_phasors!(phasors,visibilities,A,KA,B,KB,C,KC,D,KD;kwds...)
+			visibilities = solve_visibility(phasors,KA,KB,KC,KD,A,B,C,D;kwds...)
+			sum(abs2,filter(isfinite,(visibilities.-prev))) < ptol && break
 		end
 		baseline_phasors[i] = phasors
 		baseline_visibilities[i] = visibilities
