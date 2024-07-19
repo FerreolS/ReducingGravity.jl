@@ -1,17 +1,23 @@
 const baselines_list =[[1,2],[1,3],[4,1],[2,3],[4,2],[4,3]]
 const triplet_list =[[1,2,3],[1,2,4],[1,3,4],[2,3,4]]
 
-function  gravi_extract_channel(data::AbstractWeightedData,
+function  gravi_extract_channel(data::AbstractWeightedData{T,N},
 								profile::SpectrumModel,
-								lamp; kwds...) 
+								lamp; kwds...)  where {T,N}
 	chnl = gravi_extract_profile(data,profile; kwds...) 
 	λ  = get_wavelength(profile)
 	flux = lamp.(λ) 
-	T1 = max.(0.,profile.transmissions[1].(λ) .* flux)
-	T2 = max.(0.,profile.transmissions[2].(λ) .* flux)
+	T1 = max.(T(0),profile.transmissions[1].(λ) .* flux)
+	T2 = max.(T(0),profile.transmissions[2].(λ) .* flux)
 	output =  (chnl - T1 -T2) / (2 .* sqrt.(T1 .* T2)) 
 	for i ∈ findall(output.precision .<= 0)
-		output.val[i] = 0.5 .* (output.val[i- CartesianIndex(1,0)] + output.val[i+ CartesianIndex(1,0)])
+		if i.I[1] == 1
+			output.val[i] = output.val[i+ CartesianIndex(1,0)]
+		elseif i.I[1] == size(output,1)
+			output.val[i] = output.val[i- CartesianIndex(1,0)] 
+		else
+			output.val[i] = 0.5 .* (output.val[i- CartesianIndex(1,0)] + output.val[i+ CartesianIndex(1,0)])
+		end
 	end
 	return output
 end
