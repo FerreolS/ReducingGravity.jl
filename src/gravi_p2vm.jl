@@ -194,16 +194,38 @@ end
         cpl_vector_set (envelope, row, exp(-1*(value*value)/(coh_len*coh_len/2.)));
         CPLCHECK_NUL ("Cannot compute envelope");
 	} =#
-function fit_envellope(visibilities)
-	
-	
+envellope(value,rngλ) = exp.(-1/2 .* (value ./ rngλ).^2)
+
+function fit_envellope(modulus::AbstractArray{T,N},rngλ; xinit=[T(1),T(1)],kwds...) where {T,N}
+	function f(x)
+		return sum(abs2,x[2].*envellope(x[1],rngλ)  .- modulus)
+	end
+   # @tullio x0[k,c] := C[ k,c,ll,t] * val[ll,t]
+	return vmlmb(f,  xinit ;autodiff=true,kwds...)
 end
+
+function build_wavelength_range(profiles;
+								padding=0, 
+								λmin=0,
+								λmax=1) 
+
+	λstep = minimum([mean(diff(get_wavelength(p))) for p ∈ values(profiles)])
+
+	wvmin = max(λmin,minimum([p.λbnd[1] for p ∈ values(profiles)]))
+	wvmax = min(λmax,maximum([p.λbnd[2] for p ∈ values(profiles)]))
+
+	return range(wvmin - padding * λstep,wvmax  +padding *  λstep; step = λstep)
+
+end
+
+#= 
+
 function wavelength_range(profiles; 
 							baselines=baselines_list,
 							padding=0, 
 							λmin=0,
 							λmax=1) 
-	λstep = minimum([mean(diff(ReducingGravity.get_wavelength(p; bnd=false))) for p ∈ values(profiles)])
+	λstep = minimum([mean(diff(ReducingGravity.get_wavelength(p))) for p ∈ values(profiles)])
 	wvmin = 1
 	wvmax = 0
 
@@ -218,7 +240,7 @@ function wavelength_range(profiles;
 
 
 	return range(wvmin - padding * λstep,wvmax  +padding *  λstep; step = λstep), usable_wvlngth
-end
+end =#
 
 function get_selected_wavelenght(profiles; 
 								baselines=baselines_list,
@@ -380,14 +402,11 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 	
 	lk = length(kernel) 
 	if isnothing(λsampling)
-		λsampling,usable_wvlngth = wavelength_range(profiles; baselines=baselines, padding=lk,λmin=λmin,λmax=λmax)
-		λmin = min(minimum(λsampling),λmin)
-		λmax = min(minimum(λsampling),λmax)
-	else
-		λmin = min(minimum(λsampling),λmin)
-		λmax = min(minimum(λsampling),λmax)
-		usable_wvlngth = get_selected_wavelenght(profiles,baselines=baselines,λmin=λmin,λmax=λmax)
-	end
+		λsampling =  build_wavelength_range(profiles;  padding=lk,λmin=λmin,λmax=λmax)
+	end		
+	λmin = max(minimum(λsampling),λmin)
+	λmax = min(maximum(λsampling),λmax)
+	usable_wvlngth = get_selected_wavelenght(profiles,baselines=baselines,λmin=λmin,λmax=λmax)
 	nλ = length(λsampling)
 
 	minwv = minimum(usable_wvlngth)
@@ -475,7 +494,7 @@ end
 
 function  get_correlatedflux(V2PM::AbstractMatrix{T},	
 								data::AbstractWeightedData{T,2};
-								maxiter=100,atol=1e-3) where {T}
+								maxeval=500,atol=1e-3) where {T}
 		
 	nframe = size(data,2)
 	nrow = size(V2PM,2) ÷ (6*2+4)
@@ -485,14 +504,15 @@ function  get_correlatedflux(V2PM::AbstractMatrix{T},
 		b = V2PM'*(view(precision,:,t) .* view(val,:,t))[:]	
 		x,info= KrylovKit.linsolve(A,b; issymmetric=true,maxiter=maxiter,atol=atol,verbosity=1)
 		  =#
-		x = solveV2PM(V2PM, view(data,:,t))
+		x = solveV2PM(V2PM, view(data,:,t),maxeval=maxeval)
 		view(output,:,:,t)[:] .= x[:]
 	end
 	return output
 end
 
 function solveV2PM(V2PM, 
-					(;val, precision)::AbstractWeightedData) 
+					(;val, precision)::AbstractWeightedData;
+					maxeval=500) 
 
  	function fg!(x,g)
        r =(V2PM*x .- val)
@@ -501,7 +521,7 @@ function solveV2PM(V2PM,
        return sum(r.*rp)
 	end
 	x0 = V2PM'*val
-	return vmlmb(fg!,  x0 ;maxeval=500)
+	return vmlmb(fg!,  x0 ;maxeval=maxeval)
 end
 
 function  get_correlatedflux_rough(V2PM::AbstractMatrix{T},	
