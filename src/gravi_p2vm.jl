@@ -425,13 +425,20 @@ function gravi_build_p2vm_interf(p2vm_data::AbstractWeightedData{T,N},
 								itrp, 
 								profiles,
 								lamp;
-								loop_with_norm=1,loop=1 ,baselines=baselines_list,ptol=1e-5,kwds...) where {T,N}
+								loop=1 ,
+								specres = 500,
+								baselines=baselines_list,
+								ptol=1e-5,
+								rgl_phasor=1000,
+								rgl_vis=1000,
+								kwds...) where {T,N}
 
 	baseline_phasors = Vector{Array{T,3}}(undef,6)
 	baseline_visibilities = Vector{Array{T,3}}(undef,6)
-
+	λ = itrp.knots
 	Threads.@threads for (i,baseline) ∈ collect(enumerate(baselines))
 		T1,T2 = baseline
+		phi_sign = T1 > T2 ? -1 : 1
 		A = gravi_extract_channel(p2vm_data,profiles["$T1$T2-A-C"],lamp)
 		B = gravi_extract_channel(p2vm_data,profiles["$T1$T2-B-C"],lamp)
 		C = gravi_extract_channel(p2vm_data,profiles["$T1$T2-C-C"],lamp)
@@ -443,33 +450,14 @@ function gravi_build_p2vm_interf(p2vm_data::AbstractWeightedData{T,N},
 		KD = build_interpolation_matrix(itrp,get_wavelength(profiles["$T1$T2-D-C"]))
 
 		ϕ = gravi_initial_input_phase(A,KA,B,KB,C,KC,D,KD)
-		nt = size(ϕ,2)
-		phasors= gravi_build_ABCD_phasors(ϕ,A,KA,B,KB,C,KC,D,KD;kwds...)
-		#visibilities = cat(cos.(ϕ) ,sin.(ϕ),dims=3)
+		phasors= gravi_build_ABCD_phasors(ϕ,A,KA,B,KB,C,KC,D,KD;rgl_phasor=rgl_phasor)
+		visibilities = solve_visibility(phasors,KA,KB,KC,KD,A,B,C,D;rgl_vis=rgl_vis)
 
-		#visibilities = solve_visibility_opt(visibilities,phasors,KA,KB,KC,KD,A,B,C,D;kwds...)
-		visibilities = solve_visibility(phasors,KA,KB,KC,KD,A,B,C,D;kwds...)
-		#coherence = ones(T,nt)
-		#rho3 = similar(ϕ,size(ϕ)[1:2])
-		for _ ∈ 1:loop_with_norm
-			#rho3 = (ones(360) .* median(rho,dims=1))
-			#rho3 =  ones(size(visibilities,1)) .* median(rho,dims=1)
-			gravi_build_ABCD_phasors!(phasors,visibilities,A,KA,B,KB,C,KC,D,KD;kwds...)
-			visibilities = solve_visibility(phasors,KA,KB,KC,KD,A,B,C,D;kwds...)
-			rho = sqrt.(sum(abs2,visibilities,dims=2))
-			#= for i ∈ axes(ϕ,2)
-				coherence = fit_envellope(rho[30:230,i],itrp.knots[30:230].*1e6)
-				rho3[:,i] = coherence[2] .* envellope(coherence[1],itrp.knots.*1e6)
-			end  =#
-			rho3 =  ones(size(visibilities,1)) .* median(rho,dims=1)
-			visibilities .*= 1 ./ rho  .* rho3
-			visibilities[.!isfinite.(visibilities)] .= T(0)
-
-		end
-		for _ ∈ 1:loop  
+		for _ ∈ 2:loop 
 			prev = visibilities
-			gravi_build_ABCD_phasors!(phasors,visibilities,A,KA,B,KB,C,KC,D,KD;kwds...)
-			visibilities = solve_visibility(phasors,KA,KB,KC,KD,A,B,C,D;kwds...)
+			gravi_update_visibilities!(visibilities,λ;specres= specres, phi_sign=phi_sign)
+			gravi_build_ABCD_phasors!(phasors,visibilities,A,KA,B,KB,C,KC,D,KD;rgl_phasor=rgl_phasor)
+			visibilities = solve_visibility(phasors,KA,KB,KC,KD,A,B,C,D;rgl_vis=rgl_vis)
 			sum(abs2,filter(isfinite,(visibilities.-prev))) < ptol && break
 		end
 		baseline_phasors[i] = phasors
