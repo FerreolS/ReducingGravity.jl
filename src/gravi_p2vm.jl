@@ -69,7 +69,7 @@ end
 function solve_phasor(phi::AbstractArray{T,N}, 
 					K,
 					(;val, precision)::AbstractWeightedData;
-					rgl_phasor = T(1e-3),
+					rgl_phasor = T(1e3),
 					kwds...) where {T,N}
 	if N==2
 		H = similar(phi,size(K,1),2,size(phi,2))
@@ -100,7 +100,7 @@ function solve_phasor(phi::AbstractArray{T,N},
 		v = F \ (CC'*(precision[:].*val[:]))
 	else
 
-		@show "phasors not cholesky $rgl"
+		@show "phasors not cholesky $rgl_phasor"
 		v = pinv(Array(HtH)) * (CC'*(precision[:].*val[:]))
 	end
 	@debug "phasor lkl : $(likelihood(WeightedData(val[:], precision[:]),CC*v )./length(val))"
@@ -329,11 +329,12 @@ end
 
 
 function solve_visibility(phasors::AbstractArray{T,N},KA,KB,KC,KD,A,B,C,D;
-							rgl_vis=1e-3,
+							rgl_vis=1e3,
 							kwds...) where {T,N}
 	nl = size(KA,2)
 	nt = size(A,2)
 	visibilities = similar(phasors,nl,2,nt)
+#	w_visibilities = similar(phasors,nl,2,nt)
 	OA1 = KA.*phasors[1,:,1]'
 	OA2 = KA.*phasors[2,:,1]'
 	OA = hcat(OA1,OA2)
@@ -354,29 +355,33 @@ function solve_visibility(phasors::AbstractArray{T,N},KA,KB,KC,KD,A,B,C,D;
 	OD = hcat(OD1,OD2)
 	b .+= OD'*(D.precision.*D.val)
 
-	R = Array(rgl_vis  .* make_DtD(T,size(OD,2)) )
+	R = rgl_vis  .* make_DtD(T,size(OD,2)) 
 	@debug "rgl_vis = $rgl_vis"
 	@inbounds for t ∈ axes(A,2)
 		HtH = OA'*(A.precision[:,t].*OA) 
 		HtH .+= OB'*(B.precision[:,t].*OB) 
 		HtH .+= OC'*(C.precision[:,t].*OC) 
 		HtH .+= OD'*(D.precision[:,t].*OD) 
-		HtH = (Symmetric(HtH) .+  R)
+		HtH = Symmetric(HtH .+ R)
 		#HtH .+= diagm(1.e-3.*ones(size(HtH,1)))
 		F = cholesky(HtH; check=false)
     	if issuccess(F)
 			#@show "Cholesky $t"
         	v = F \ b[:,t]
+		#	w = diag(inv(F))
     	else
 			@show "visibilities not cholesky"
-        	v = pinv(HtH) * b[:,t]
+			iHtH = pinv(HtH)
+        	v = iHtH * b[:,t]
+	#		w = diag(iHtH)
 		end
 		#v[.!isfinite.(v)].=T(0)
 		visibilities[:,:,t] = reshape(v,nl,2)
+	#	w_visibilities[:,:,t] = reshape(w,nl,2)
     end
 	@debug "vis lkl : $(likelihood(A,OA* reshape(visibilities,size(OA,2),:))./length(A))"
 	
-	return visibilities
+	return visibilities #,w_visibilities
 
 	
 end
