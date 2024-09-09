@@ -56,7 +56,7 @@ function gravi_compute_transmissions(  spectra::Dict{String, ConcreteWeightedDat
 		BSp2 = profile.transmissions[2].basis
 
 
-		wvlngth =  T.(get_wavelength(profile; bnd=false))
+		wvlngth =  T.(get_wavelength(profile; bnd=true))
 		lmp =lamp.(wvlngth)
 		good = isfinite.(lmp) .&& (lmp .!= 0)
 		wvgood = wvlngth[good]
@@ -131,7 +131,7 @@ function gravi_compute_lamp(spectra::Dict{String, S},
 	for (i,(key,spectrum)) ∈ enumerate(spectra)		
 		profile = profiles[ key[3:end]]
 		transmission = key[1] == key[3] ? profile.transmissions[1] : profile.transmissions[2]
-		wvlngth = get_wavelength(profile; bnd=false)
+		wvlngth = get_wavelength(profile; bnd=true)
 		good = .!isnan.(wvlngth)
 		data_trans[i] = (;spectrum = view(spectrum,good), transmission = transmission(wvlngth[good]), wavelength = wvlngth[good])
 	end
