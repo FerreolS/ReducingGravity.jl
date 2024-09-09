@@ -67,7 +67,7 @@ end
 
 function get_center(s::SpectrumModel{A,B,C,D,E}) where {A,B,C,D,E}
 	(;center,bbox) = s 
- 	if C == Nothing
+ 	if B == Nothing
 		p = bbox.indices[1]
 	else
 		p = get_wavelength(s)
@@ -76,9 +76,15 @@ function get_center(s::SpectrumModel{A,B,C,D,E}) where {A,B,C,D,E}
 	return p .^(0:(cdeg-1))'* center
 end
 
-function get_width((;σ,bbox)::SpectrumModel)
-	p = bbox.indices[1]
+function get_width(s::SpectrumModel{A,B,C,D,E}) where {A,B,C,D,E}
+	(;σ,bbox) = s 
+ 	if B == Nothing
+		p = bbox.indices[1]
+	else
+		p = get_wavelength(s)
+	end
 	σdeg = size(σ,1)	
+	
 	return p .^(0:(σdeg-1))'* σ
 end
 
