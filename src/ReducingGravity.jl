@@ -50,6 +50,7 @@ export 	gravi_data_create_bias_mask,
 
 
 include("utils/FITSutils.jl")
+include("utils/utils.jl")
 include("utils/WeightedData.jl")
 include("utils/Interpolation.jl")
 include("utils/DataStruct.jl")
