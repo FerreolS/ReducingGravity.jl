@@ -159,5 +159,5 @@ function make_DtD(T::DataType,n)
 	V = vcat(diag0,diag1,diag1)
 	I = vcat(1:n,2:n,1:(n-1))
 	J = vcat(1:n,1:(n-1),2:n)
-	sparse(I, J, V)
+	Symmetric(sparse(I, J, V))
 end
