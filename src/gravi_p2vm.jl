@@ -926,3 +926,80 @@ function zeroclosure!(interferometric, closures;baselines = baselines_list, trip
 		end
 	end
 end
+
+
+function mean_opd_create(visibilities::AbstractArray{T,3}, λ; phi_sign=1) where T
+	ϕ = atan.(visibilities[:,2,:],visibilities[:,1,:])
+	r = sqrt.(abs2.(visibilities[:,1,:]).+abs2.(visibilities[:,2,:]))
+	lmin = maximum(mapslices(s->findfirst(x->  0.9 .< x .< 1.1,s),r,dims=1))
+	lmax = minimum(mapslices(s->findlast(x->  0.9 .< x .< 1.1,s),r,dims=1))
+	unwrap!(ϕ)
+	opd = phi_sign .* mean((T.(λ ./(2π)) .* ϕ)[lmin:lmax,:],dims=1)[:]
+	gd = angle.(mean(exp.(1im .* diff(ϕ[lmin:lmax,:],dims=1)),dims=1))[:]
+	intercept, _ =  affine_solve(opd,gd)
+	opd .-= intercept
+	return opd
+end
+
+
+function mean_opd_create(ϕ::AbstractArray{T,2}, λ; phi_sign=1) where T
+	unwrap!(ϕ)
+	opd = phi_sign .*  mean((T.(λ ./(2π)) .* ϕ)[lmin:lmax,:],dims=1)[:]
+	gd = angle.(mean(exp.(1im .* diff(ϕ[lmin:lmax,:],dims=1)),dims=1))[:]
+	intercept, _ =  affine_solve(opd,gd)
+	opd .-= intercept
+	return opd
+end
+
+
+function gravi_compute_envelope(opd::AbstractVector{T}, λ) where {T}
+	nλ = length(λ)
+	nt = length(opd)
+
+	# Compute delta_lambda and lambda from experience 
+	Δλ = mean(diff(λ))*3
+
+
+	coh_len = @.  T(λ^2 / Δλ)
+
+	# Gaussian enveloppe 
+	envellope = zeros(T,nλ,nt)
+	for idx ∈ CartesianIndices(envellope)
+		i, j = Tuple(idx)
+		envellope[i,j] = exp(-1*(opd[j]^2)/(coh_len[i]^2/2))
+	end
+	return envellope
+end
+
+
+
+function gravi_compute_envelope(opd::AbstractVector{T}, λ,R) where {T}
+	nλ = length(λ)
+	nt = length(opd)
+
+	coh_len = @. (2log(2)) / π * T(λ * R)
+
+	# Gaussian enveloppe 
+	envellope = zeros(T,nλ,nt)
+	for idx ∈ CartesianIndices(envellope)
+		i, j = Tuple(idx)
+		envellope[i,j] = exp(-1*(opd[j]^2)/(coh_len[i]^2/2))
+	end
+	return envellope
+end
+
+function unwrap!(ϕ::AbstractMatrix{T}; period = 2π) where T 
+	unwrap!(view(ϕ,:,1))
+	for x = eachslice(ϕ,dims=1)
+		unwrap!(view(x,:))
+	end
+end
+
+function gravi_update_visibilities!(visibilities,λ; phi_sign = 1, specres=500, )
+	opd = mean_opd_create(visibilities, λ; phi_sign= phi_sign)
+	envellope = gravi_compute_envelope(opd,λ,specres)
+	ϕ = opd' .* (2π ./ λ)
+	visibilities[:,1,:] .= envellope .* cos.(ϕ)
+	visibilities[:,2,:] .= envellope .* sin.(ϕ)
+
+end
