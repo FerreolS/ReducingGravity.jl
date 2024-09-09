@@ -1,4 +1,4 @@
-using FITSIO,Statistics, ArrayTools,StatsBase, LinearAlgebra
+using FITSIO,Statistics, ArrayTools,StatsBase, LinearAlgebra,InterpolationKernels
 using ReducingGravity
 
 
@@ -66,9 +66,11 @@ ron = gravi_compute_ron(darkp2vm,goodpix,gain)
 wd = gravi_create_weighteddata(p2vm, illuminated,goodpix, gain,ron)
 tλ = ReducingGravity.build_wavelength_range(profiles)
 
-tλ4 = tλ[1:4:end]
-itrp4 = ReducingGravity.Interpolator(tλ4,CatmullRomSpline{Float32}())
-baseline_phasors, baseline_visibilities =  gravi_build_p2vm_interf(wd - darkp2vm,itrp4, profiles,lamp;loop_with_norm=3,loop=5, rgl_phasor=2,rgl_vis=2)
+#tλ4 = tλ[1:4:end]
+#itrp4 = ReducingGravity.Interpolator(tλ4,CatmullRomSpline{Float32}())
+
+itrp = ReducingGravity.Interpolator(tλ,CatmullRomSpline{Float32}())
+baseline_phasors, baseline_visibilities =  gravi_build_p2vm_interf(wd - darkp2vm,itrp, profiles,lamp;loop_with_norm=3,loop=5, rgl_phasor=1000,rgl_vis=1000)
 #gravi_build_p2vm_interf(wd - darkp2vm,profiles,lamp; loop_with_norm=10, loop=2)
 S,tλ,wvidx = gravi_build_V2PM(profiles,baseline_phasors;λmin=2e-6,λmax=2.5e-6)
 #wdp = ReducingGravity.make_pixels_vector(view(p12,:,:,100) - darkflat,profiles,wvidx);
