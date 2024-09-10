@@ -1,5 +1,7 @@
 const baselines_list =[[1,2],[1,3],[4,1],[2,3],[4,2],[4,3]]
 const triplet_list =[[1,2,3],[1,2,4],[1,3,4],[2,3,4]]
+@enum Chnl chnlA=1 chnlB=2 chnlC=3 chnlD=4
+Base.to_index(s::Chnl) = Int(s)
 
 function  gravi_extract_channel(data::AbstractWeightedData{T,N},
 								profile::SpectrumModel,
