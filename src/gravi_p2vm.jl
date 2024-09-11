@@ -147,7 +147,7 @@ end
 
 
 function gravi_build_p2vm_interf(p2vm_data::AbstractWeightedData{T,N},
-								itrp::Interpolator, 
+								itrp::I, 
 								profiles,
 								lamp;
 								loop=1 ,
@@ -156,10 +156,11 @@ function gravi_build_p2vm_interf(p2vm_data::AbstractWeightedData{T,N},
 								ptol=1e-5,
 								rgl_phasor=T(1000),
 								rgl_vis=T(1000),
-								kwds...) where {T,N}
+								kwds...) where {T,N, I<:Interpolator}
 
 	baseline_phasors = Vector{Array{T,3}}(undef,6)
 	baseline_visibilities = Vector{Array{T,3}}(undef,6)
+	baseline_phasors =  [Vector{InterpolatedSpectrum{Complex{T},I}}(undef,4) for _∈1:6]
 	λ = itrp.knots
 	Threads.@threads for (i,baseline) ∈ collect(enumerate(baselines))
 		T1,T2 = baseline
@@ -185,8 +186,11 @@ function gravi_build_p2vm_interf(p2vm_data::AbstractWeightedData{T,N},
 			visibilities = solve_visibility(phasors,KA,KB,KC,KD,A,B,C,D;rgl_vis=rgl_vis)
 			sum(abs2,filter(isfinite,(visibilities.-prev))) < ptol && break
 		end
-		baseline_phasors[i] = phasors
+		#baseline_phasors[i] = phasors
 		baseline_visibilities[i] = visibilities
+		for ch in instances(Chnl)
+			baseline_phasors[i][ch] = InterpolatedSpectrum(complex.(phasors[1,:,ch], phasors[2,:,ch]), itrp)
+		end
 	end
 	return baseline_phasors, baseline_visibilities
 end
@@ -213,14 +217,15 @@ function get_selected_wavelenght(profiles;
 								λmin=0,
 								λmax=1) 
 	
-	usable_wvlngth = zeros(Int,2,6)
+	usable_wvlngth = [zeros(Int,2,4) for _∈1:6]
 	for (i,baseline) ∈ enumerate(baselines)
 		T1,T2 = baseline
-		baseline_wvlngth = mean(hcat((get_wavelength(profiles["$T1$T2-$chnl-C"]; bnd=true) for chnl ∈["A","B","C","D"])...),dims=2)[:]
-		fidx = findfirst(x->isfinite(x) && x>=λmin,baseline_wvlngth)
-		lidx = findlast(x->isfinite(x) && x<=λmax,baseline_wvlngth)
-		usable_wvlngth[:,i] .= [fidx,lidx]
-
+		for (j,chnl) ∈ enumerate(["A","B","C","D"])
+			wvlngth = get_wavelength(profiles["$T1$T2-$chnl-C"]; bnd=true)
+			fidx = findfirst(x->isfinite(x) && x>=λmin,wvlngth)
+			lidx = findlast(x->isfinite(x) && x<=λmax,wvlngth)
+			usable_wvlngth[i][:,j] .= [fidx,lidx]
+		end
 	end
 	return usable_wvlngth
 end
@@ -228,11 +233,11 @@ end
 
 function make_pixels_vector(data::AbstractWeightedData,
 							profiles::AbstractDict,
-							wvidx::Vector{Int}; 
+							wvidx::Vector{Matrix{Int}}; 
 							baselines=baselines_list, kwds...)  
 	
 	nframe = size(data,3)
-	nmeasuredλ = wvidx[2] - wvidx[1]+1					
+	nmeasuredλ = maximum(maximum(diff(w,dims=1)) for w ∈ wvidx) +1				
 	nL = 4*6*nmeasuredλ
 	v = zeros(Float64,nL,nframe)
 	w = zeros(Float64,nL,nframe)
@@ -241,8 +246,8 @@ function make_pixels_vector(data::AbstractWeightedData,
 			T1,T2 = baseline
 			for (k,chnl) ∈ enumerate(["A","B","C","D"])
 				(;val,precision) = gravi_extract_profile(view(data,:,:,t),profiles["$T1$T2-$chnl-C"]; kwds...) 
-				wvlngth = get_wavelength(profiles["$T1$T2-$chnl-C"])
-				for (j,idx) ∈ enumerate(wvidx[1]:wvidx[2])
+				wvlngth = get_wavelength(profiles["$T1$T2-$chnl-C"],bnd=true)
+				for (j,idx) ∈ enumerate(wvidx[i][1,k]:wvidx[i][2,k])
 					isfinite(wvlngth[idx]) || isfinite(val[idx]) || continue
 					v[((j-1)*(6*4)) + (i-1)*4 + k,t] = val[idx]
 					w[((j-1)*(6*4)) + (i-1)*4 + k,t] = precision[idx]
@@ -287,9 +292,10 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 	usable_wvlngth = get_selected_wavelenght(profiles,baselines=baselines,λmin=λmin,λmax=λmax)
 	nλ = length(λsampling)
 
-	minwv = minimum(usable_wvlngth)
-	maxwv = maximum(usable_wvlngth)
-	nmeasuredλ = maxwv - minwv + 1
+#= 	minwv = minimum(minimum.(usable_wvlngth))
+	maxwv = maximum(maximum.(usable_wvlngth))
+	nmeasuredλ = maxwv - minwv + 1  =#
+	nmeasuredλ = maximum(maximum(diff(w,dims=1)) for w ∈ usable_wvlngth) +1				
 
 	nL = 4*6*nmeasuredλ
 	nC = (4+6*2)*nλ
@@ -302,15 +308,16 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 	for (i,baseline) ∈ enumerate(baselines)
 		T1,T2 = baseline
 		for  (ci,chnl) ∈ enumerate(["A","B","C","D"])
-			wvlngth = get_wavelength(profiles["$T1$T2-$chnl-C"])[:]
-			for (j,idx) ∈ enumerate(minwv:maxwv)
+			wvlngth = get_wavelength(profiles["$T1$T2-$chnl-C"]; bnd=true)
+			(mnw,mxw) =usable_wvlngth[i][:,ci]
+			for (j,idx) ∈ enumerate(mnw:mxw)
 				λ =  wvlngth[idx]
 				isfinite(λ) || continue
 				λidx = 	find_index(λsampling,λ)
 				λidx > 1 || continue
 				# weights
 				off,weights = InterpolationKernels.compute_offset_and_weights(kernel, λidx)
-				off = Int(off)+1
+				off = Int(off) # + 1 a verifier
 				mx = off + lk
 				wsz = lk
 				if off < 0 
@@ -318,7 +325,7 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 					off = 0			
 					weights = (sw=sum(weights))==0 ? weights : weights./sw
 					wsz = length(weights)
-				elseif (off+lk) > nC
+				elseif (off+lk) > (nC÷16)
 					mx = min(off + lk, nC )
 					weights = weights[1:(mx-off)] 
 					weights = (sw=sum(weights))==0 ? weights : weights./sw
@@ -328,15 +335,16 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 				trans1 = profiles["$T1$T2-$chnl-C"].transmissions[1](λ)
 				trans2 = profiles["$T1$T2-$chnl-C"].transmissions[2](λ)
 
+				coherence = baseline_phasors[i][ci](λ)
 				# Interferometry
 				trans =  weights.*sqrt(trans1*trans2) 
 				#Real
-				V[c:(c+wsz-1)] .= baseline_phasors[i][1,ci,idx] .* trans 
+				V[c:(c+wsz-1)] .= real(coherence) .* trans 
 				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ 4 .+ (i-1)*(2) .+ 1
 				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
 				c = c+wsz
 				#Im
-				V[c:(c+wsz-1)] .= baseline_phasors[i][2,ci,idx] .* trans 
+				V[c:(c+wsz-1)] .= imag(coherence) .* trans 
 				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ 4 .+ (i-1)*(2) .+ 2
 				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
 				c = c+wsz
@@ -354,7 +362,7 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 			end 
 		end
 	end
-#	return V,C,L,c-1,nL,nC, nelement
+	#return V,C,L,c-1,nL,nC, nelement
 #= 	L = L[1:c-1]
 	C = C[1:c-1]
 	V = V[1:c-1]
@@ -366,7 +374,7 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 	@. C = C - minC+1
 	nC = maxC - minC +1
 	nL = maxL - minL +1 =#
-	return sparse(L[1:c-1],C[1:c-1],V[1:c-1],nL,nC),λsampling[:],[minwv,maxwv]
+	return sparse(L[1:c-1],C[1:c-1],V[1:c-1],nL,nC),λsampling,usable_wvlngth
 end
 
 
