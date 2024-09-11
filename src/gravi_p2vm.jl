@@ -7,7 +7,7 @@ function  gravi_extract_channel(data::AbstractWeightedData{T,N},
 								profile::SpectrumModel,
 								lamp; kwds...)  where {T,N}
 	chnl = gravi_extract_profile(data,profile; kwds...) 
-	λ  = get_wavelength(profile)
+	λ  = get_wavelength(profile;bnd=true)
 	flux = lamp.(λ) 
 	T1 = max.(T(0),profile.transmissions[1].(λ) .* flux)
 	T2 = max.(T(0),profile.transmissions[2].(λ) .* flux)
@@ -169,10 +169,10 @@ function gravi_build_p2vm_interf(p2vm_data::AbstractWeightedData{T,N},
 		C = gravi_extract_channel(p2vm_data,profiles["$T1$T2-C-C"],lamp)
 		D = gravi_extract_channel(p2vm_data,profiles["$T1$T2-D-C"],lamp)
 
-		KA = build_interpolation_matrix(itrp,get_wavelength(profiles["$T1$T2-A-C"]))
-		KB = build_interpolation_matrix(itrp,get_wavelength(profiles["$T1$T2-B-C"]))
-		KC = build_interpolation_matrix(itrp,get_wavelength(profiles["$T1$T2-C-C"]))
-		KD = build_interpolation_matrix(itrp,get_wavelength(profiles["$T1$T2-D-C"]))
+		KA = build_interpolation_matrix(itrp,get_wavelength(profiles["$T1$T2-A-C"];bnd=true))
+		KB = build_interpolation_matrix(itrp,get_wavelength(profiles["$T1$T2-B-C"];bnd=true))
+		KC = build_interpolation_matrix(itrp,get_wavelength(profiles["$T1$T2-C-C"];bnd=true))
+		KD = build_interpolation_matrix(itrp,get_wavelength(profiles["$T1$T2-D-C"];bnd=true))
 
 		ϕ = gravi_initial_input_phase(A,KA,B,KB,C,KC,D,KD)
 		phasors= gravi_build_ABCD_phasors(ϕ,A,KA,B,KB,C,KC,D,KD;rgl_phasor=rgl_phasor)
@@ -197,7 +197,7 @@ function build_wavelength_range(profiles;
 								λmin=0,
 								λmax=1) 
 
-	λstep = minimum([mean(diff(get_wavelength(p))) for p ∈ values(profiles)])
+	λstep = minimum([mean(diff(get_wavelength(p; bnd=true))) for p ∈ values(profiles)])
 
 	wvmin = max(λmin,minimum([p.λbnd[1] for p ∈ values(profiles)]))
 	wvmax = min(λmax,maximum([p.λbnd[2] for p ∈ values(profiles)]))

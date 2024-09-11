@@ -97,7 +97,7 @@ function get_wavelength((;λ)::SpectrumModel,p;kwds...)
 	return λp[1]
 end
 
-function get_wavelength((;λ,λbnd, bbox)::SpectrumModel; bnd=true)
+function get_wavelength((;λ,λbnd, bbox)::SpectrumModel; bnd=false)
 	p = bbox.indices[1]
 	λdeg = length(λ)	
 	wv = p .^(0:(λdeg-1))'* λ
@@ -174,7 +174,7 @@ function get_profile(profile::SpectrumModel)
 
 	degmax = max(ncenter,nσ)
 
-    λ = get_wavelength(profile)
+    λ = get_wavelength(profile; bnd=true)
 
 	u = broadcast(^,Float64.(λ),(0:(degmax-1))')
 	cy = u[:,1:ncenter]*center
