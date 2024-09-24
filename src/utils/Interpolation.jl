@@ -29,18 +29,6 @@ function build_interpolation_matrix(kernel::Kernel{T,N}, knots, samples) where {
 end
 
 build_interpolation_matrix((;knots,kernel)::Interpolator, samples) = build_interpolation_matrix(kernel, knots, samples) 
-#= function find_index(knots,sample)
-	b = findfirst(sample .<= knots)
-	b = isnothing(b) ? firstindex(knots) : b 
-	kb = knots[b]
-	kb ==sample && return kb
-	e = findlast(sample .> knots)
-	e = isnothing(e) ? firstindex(knots) : e
-	ke = knots[e]
-	ke == sample && return ke
-	b == e && return ke
-	return b + (sample - kb) / (ke - kb) 
-end =#
 
 function find_index(knots::StepRangeLen,sample)
 	return (sample  - first(knots)) /step(knots) +1

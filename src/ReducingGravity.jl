@@ -6,19 +6,15 @@ using 	FITSIO,
 		ArrayTools, 
 		StatsBase,
 		Statistics,
-		ConcreteStructs,
 		Optim, 
 		Optimisers, 
 		StaticArrays,
-		#BSplineKit,
 		Zygote,
 		ChainRulesCore,
-		#ParameterHandling,
 		Accessors,
 		OptimPackNextGen,
 		InterpolationKernels,
 		SparseArrays,
-		KrylovKit,
 		PRIMA,
 		Tullio
 
@@ -87,12 +83,6 @@ function gravi_data_create_bias_mask(darkfits::FITS)
 
 	Vandermonde = reduce(hcat,[ x.^n  for n ∈ 0:maxdeg])
 	M = (Vandermonde'*Vandermonde)\Vandermonde'
-	# Preconditionning
-	# B = diagm(1. ./sqrt.(sum(Vandermonde.^2,dims=1)[:]))
-	# C = Vandermonde*diagm(b[:])
-	# M = B*((C'*C)\C')
-	
-	#bbx = Dict{String,BoundingBox{Int}}()
 	bbx = Dict{String, Tuple{Vector{Float64},CartesianIndices{2, Tuple{UnitRange{Int64}, UnitRange{Int64}}}}}()
 	sizehint!(bbx,nregion)
 	rng = 1:nx
@@ -103,7 +93,6 @@ function gravi_data_create_bias_mask(darkfits::FITS)
 		for (ix,iy ) ∈ zip(rng,cy)
 			view(illuminated,ix,max(1,iy-hw):min(ny,iy+hw)) .= true 
 		end
-		#push!(bbx,IMAGING_DETECTOR_SC["REGNAME"][i]=>BoundingBox(1,nx,max(1,minimum(cy)-hw),min(ny,maximum(cy)+hw)))
 		push!(bbx,IMAGING_DETECTOR_SC["REGNAME"][i]=>(coefs,CartesianIndices((1:nx,max(1,minimum(cy)-hw):min(ny,maximum(cy)+hw)))))
 	end
 	return (illuminated,bbx)		
@@ -117,7 +106,6 @@ function gravi_data_detector_cleanup!(	data::AbstractArray{T,3},
 	avgbias = zeros(T,size(data,1),1)
 	
 	@inbounds for n ∈ axes(illuminated,1)
-		#mdata = median(data[n,.!illuminated[n,:],..],dims=1) 
 		mdata = map(median, eachslice(data[n,.!illuminated[n,:],:],dims=2))
 		view(data,n,:,:) .-= reshape(mdata,1,:)
 		avgbias[n] = mean(mdata)
@@ -166,11 +154,6 @@ function gravi_compute_blink(	data::AbstractArray{T,3};
 								blinkkernel=5,
 								bias::B=20,
 								kwd...) where {T,B}
-	#bias = T(bias)
-	#mdata = map(median, eachslice(data,dims=(1,2)))
-	#mdata = dropdims(median(data, dims=3),dims=3) # median(, dims=) is type unstable
-	#mdata = map(x->quantile(x,0.5), eachslice(data,dims=(1,2)))
-	#ffiltered = (data .- mapwindow(median, data,blinkkernel,border="circular")) ./ sqrt.(max.(mdata , bias))
 
 
 	ffiltered = similar(data)
@@ -232,17 +215,7 @@ function gravi_create_weighteddata(	data::AbstractArray{T,3},
 		avg[i] = a
 		wgt[i] = w
 	end
-#= 	goodpix .&= illuminated
-	blink .&= goodpix 
-	avg = (sum(data.*blink, dims=3) ./ sum(blink, dims=3))[:,:,1]
-	if unbiased
-		wgt =  (sum(blink.*(data .- avg).^2,dims=3).\ (sum(blink,dims=3) .- 3))[:,:,1]
-	else
-		wgt =  (sum(blink.*(data .- avg).^2,dims=3).\ (sum(blink,dims=3) ))[:,:,1]
-	end
-	goodpix .&= isfinite.(wgt) .&& isfinite.(avg)
-	avg[.!(goodpix)] .= zero(T)
-	wgt[.!(goodpix)] .= zero(T) =#
+
 	weighteddata = WeightedData(avg,wgt)
 	flagbadpix!(weighteddata,.!goodpix)
 	return (weighteddata, goodpix)
@@ -269,8 +242,6 @@ function gravi_create_weighteddata(	data::AbstractArray{T,3},
 	avg = data.*goodpix
 	wgt = goodpix ./ (ron .+ gain .\ max.(zero(T),avg) .+ T(1/12) )
 
-	#avg[.!(goodpix)] .= zero(T)
-	#wgt[.!(goodpix)] .= zero(T)
 	weighteddata = WeightedData(avg,wgt) 
 	return weighteddata
 end
@@ -287,7 +258,6 @@ function gravi_compute_profile(	flats::Vector{ConcreteWeightedData{T,N}},
 								σ_degree=4, 
 								thrsld=0.1) where {T,N,C,B}
 	profile = Dict{String,SpectrumModel{C,Nothing,Nothing,Float64,Nothing}}()
-	#profile = Dict{String,SpectrumModel}()
 	Threads.@threads for tel1 ∈ 1:4
 		for tel2 ∈ 1:4
 			tel1==tel2 && continue
@@ -310,7 +280,6 @@ function gravi_compute_profile(	flat::ConcreteWeightedData{T,N},
 								σ_degree=4, 
 								thrsld=0.1) where {T,N,B,C}
 	profiles = Dict{String,SpectrumModel{C,Nothing,Nothing,T,Nothing}}()
-	#profile = Dict{String,SpectrumModel}()
 	Threads.@threads for (key, (center_guess,bndbx)) ∈ collect(bboxes)
 		θ = fitprofile(flat,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld, center_guess=center_guess)
 		p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{InterpolatedSpectrum{Nothing,Nothing}}(),T(1.0),bndbx)

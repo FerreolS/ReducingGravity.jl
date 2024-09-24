@@ -73,18 +73,3 @@ function listfitsfiles( dir::AbstractString = pwd(),
     end
     return FitsDict
 end
-
-@enum SPECRES LOW MED HIGH
-@enum POLAMODE COMBINED SPLIT
-@enum CATG CALIB SCIENCE
-@enum DPRTYPE DARK FLAT WAVE WAVESC P2VM STDSINGLE SKYSINGLE OBJECTSINGLE
-
-struct GravityData{T,N}
-    data::AbstractArray{T,N}  # FITS file
-    nframes::Int  # number of frames
-    Δt::Float64   # exposure time (seconds)
-    spectralresolution::SPECRES # spectral resolution
-    polamode::POLAMODE #spectral mode
-    cat::CATG   # category name
-    type::DPRTYPE  # type name
-end

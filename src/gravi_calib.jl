@@ -365,58 +365,6 @@ function gravi_reestimate_rov_percolumn_from_dark((;val,precision)::AbstractWeig
 	
 end
 
-function gravi_compute_flat_and_dark_from_p2vm(	P2VM::Dict{String, Array{T, 3}}, 
-										bboxes::Dict{String,C},
-										illuminated::BitMatrix,
-										goodpix::BitMatrix; 
-										filterblink=true,
-										unbiased=true, 
-										kwds...
-											) where {T,C}
-											
-	sz = size(first(values(P2VM)))
-	sorted = Array{T,4}(undef,sz...,6)
-	ind = ones(Int,length(bboxes))
-
-	for (i,(key,(_,bbox))) ∈ enumerate(bboxes )
-
-
-		
-		
-		for (baseline,data) ∈ P2VM
-			tel1,tel2 = baseline[5] , baseline[6]
-
-		
-			t1,t2 = key[1] , key[2] 
-			
-			ill1 = (t1 == tel1) || (t1 == tel2) 
-			ill2 = (t2 == tel1) || (t2 == tel2) 
-			if (ill1 && ill2 ) # interferometric channel
-				idx = 6
-			elseif (!ill1 && !ill2)  # non illuminated channel
-				idx =5
-			else 
-				idx =  ind[i]
-				ind[i] += 1
-			end 
-			view(sorted,bbox,:,idx)  .= view(data,bbox,:)
-			
-		end
-		
-	end
-	wd = Vector{ConcreteWeightedData{T,2}}(undef,5)
-	gp = Vector{BitMatrix}(undef,5)
-	Threads.@threads for i∈1:5
-		wd[i], gp[i] = gravi_create_weighteddata(sorted[:,:,:,i],illuminated,goodpix,filterblink=filterblink,unbiased=unbiased,keepbias=true,cleanup=false)
-	end
-	goodpix .&= gp[5]
-	Threads.@threads for i∈1:5
-		flagbadpix!(wd[i],.!goodpix)
-	end
-	
-	return wd[1:4], wd[5], sorted[:,:,:,6],goodpix
-
-end
 
 
 function gravi_reorder_p2vm(	P2VM::Dict{String, Array{T, 3}}, 

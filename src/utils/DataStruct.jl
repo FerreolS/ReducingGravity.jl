@@ -46,8 +46,6 @@ function ((;center,σ)::SpectrumModel{A,Nothing,B,D,E})(p) where {A,B,D,E}
 	cp =  p .^(0:(cdeg-1))'* center
 	σdeg = length(σ)
 	σp = p .^(0:(σdeg-1))'* σ
-	#λdeg = length(λ)
- 	#λp = p .^(0:(λdeg-1))'* λ
 	return (;center=cp[1],σ=σp)#,λ=λp[1])
 end
 
