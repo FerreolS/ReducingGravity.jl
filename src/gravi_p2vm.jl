@@ -514,27 +514,54 @@ function zeroclosure!(interferometric, closures;baselines = baselines_list, trip
 end
 
 
-function mean_opd_create(visibilities::AbstractArray{T,3}, λ; phi_sign=1) where T
+function mean_opd_create(visibilities::AbstractArray{T,3}, λ; kwds...) where T
 	ϕ = atan.(visibilities[:,2,:],visibilities[:,1,:])
 	r = sqrt.(abs2.(visibilities[:,1,:]).+abs2.(visibilities[:,2,:]))
 	lmin = maximum(mapslices(s->findfirst(x->  0.9 .< x .< 1.1,s),r,dims=1))
 	lmax = minimum(mapslices(s->findlast(x->  0.9 .< x .< 1.1,s),r,dims=1))
-	unwrap!(ϕ)
-	opd = phi_sign .* mean((T.(λ ./(2π)) .* ϕ)[lmin:lmax,:],dims=1)[:]
-	gd = angle.(mean(exp.(1im .* diff(ϕ[lmin:lmax,:],dims=1)),dims=1))[:]
-	intercept, _ =  affine_solve(opd,gd)
-	opd .-= intercept
-	return opd
+	mean_opd_create(ϕ,λ; lmin=lmin, lmax=lmax,kwds...)
 end
 
 
-function mean_opd_create(ϕ::AbstractArray{T,2}, λ; phi_sign=1) where T
-	unwrap!(ϕ)
-	opd = phi_sign .*  mean((T.(λ ./(2π)) .* ϕ)[lmin:lmax,:],dims=1)[:]
-	gd = angle.(mean(exp.(1im .* diff(ϕ[lmin:lmax,:],dims=1)),dims=1))[:]
+function mean_opd_create(ϕ::AbstractArray{T,2}, λ; lmin=1,lmax=size(ϕ,1),phi_sign=1) where T
+	opd, gd = compute_opd_gd(ϕ[lmin:lmax,:], λ)
+	#opd = phi_sign .*  mean((T.(λ ./(2π)) .* ϕ)[lmin:lmax,:],dims=1)[:]
+	#gd = angle.(mean(exp.(1im .* diff(ϕ[lmin:lmax,:],dims=1)),dims=1))[:]
 	intercept, _ =  affine_solve(opd,gd)
 	opd .-= intercept
-	return opd
+	return opd #, gd
+end
+
+function mean_opd_create(A::AbstractArray{T,2}, λ; kwds...) where {T<:Complex}
+	ϕ = angle.(A)
+	mean_opd_create(ϕ,λ; kwds...)
+end
+
+function compute_opd_gd(ϕ::AbstractArray{T,2}, λ; lmin=1,lmax=size(ϕ,1)) where T
+	unwrap!(ϕ,dims=2)
+	N = size(ϕ,2)
+	w = T(2π) ./λ[lmin:lmax]
+	@show w0 = mean(w)
+	w .-= w0
+	opd = Vector{T}(undef,N)
+	gd = Vector{T}(undef,N)
+	@inbounds @simd for n ∈ 1:N
+		 intercept, slope = affine_solve(ϕ[lmin:lmax,n],w)
+		gd[n] = slope
+		opd[n] = intercept ./ w0 
+	end
+	return opd, gd
+end
+
+
+function compute_opd_gd(visdata::Vector{A}, λ; lmin=1,lmax=size(visdata[1],1)) where {T,A<:Matrix{Complex{T}}}
+	N = length(visdata)
+	gd = Vector{Vector{T}}(undef, N)
+	opd = Vector{Vector{T}}(undef, N)
+	for t ∈ 1:N
+		opd[t], gd[t] =  compute_opd_gd(visdata[t][lmin:lmax,:], λ[lmin:lmax])
+	end
+	return opd, gd 
 end
 
 
@@ -567,7 +594,7 @@ function gravi_compute_envelope(opd::AbstractVector{T}, λ,R) where {T}
 
 	# Gaussian enveloppe 
 	envellope = zeros(T,nλ,nt)
-	for idx ∈ CartesianIndices(envellope)
+	@inbounds @simd for idx ∈ CartesianIndices(envellope)
 		i, j = Tuple(idx)
 		envellope[i,j] = exp(-1*(opd[j]^2)/(coh_len[i]^2/2))
 	end
