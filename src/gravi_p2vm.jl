@@ -276,12 +276,13 @@ end
 
 
 
-function gravi_build_V2PM(	profiles::AbstractDict,
-									baseline_phasors; 
-									baselines=baselines_list,
+function gravi_build_V2PM(profiles::AbstractDict,
+							baseline_phasors::Vector{Vector{InterpolatedSpectrum{Complex{T},B}}}; 
+									closure_correction::Tc=nothing,
+									baselines::Vector{Vector{Int64}}=baselines_list,
 									λsampling=nothing,
 									λmin=0.0,λmax=1.0,
-									kernel = CatmullRomSpline())
+									kernel = CatmullRomSpline{Float64}()) where {T,B,Tc<:Union{Nothing,Vector{Vector{Complex{T}}}}}
 	
 	lk = length(kernel) 
 	if isnothing(λsampling)
@@ -290,6 +291,18 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 	λmin = max(minimum(λsampling),λmin)
 	λmax = min(maximum(λsampling),λmax)
 	usable_wvlngth = get_selected_wavelenght(profiles,baselines=baselines,λmin=λmin,λmax=λmax)
+	gravi_build_V2PM(profiles, baseline_phasors, closure_correction, λsampling,usable_wvlngth,baselines,kernel)
+end
+
+function gravi_build_V2PM(	profiles::AbstractDict,
+									baseline_phasors::Vector{Vector{InterpolatedSpectrum{Complex{T},B}}},
+									closure_correction,
+									λsampling,
+									usable_wvlngth,
+									baselines,
+									kernel) where {T,B}
+	
+	lk = length(kernel) 
 	nλ = length(λsampling)
 
 #= 	minwv = minimum(minimum.(usable_wvlngth))
@@ -302,7 +315,7 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 	nelement = 4*6*(2*6+2)*nmeasuredλ+(4*6*2)*nmeasuredλ*(lk-1)
 	L = zeros(Int,nelement)
 	C = zeros(Int,nelement)
-	V = zeros(Float64,nelement)
+	V = zeros(T,nelement)
 	c = 1
 
 	for (i,baseline) ∈ enumerate(baselines)
@@ -316,8 +329,9 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 				λidx = 	find_index(λsampling,λ)
 				λidx > 1 || continue
 				# weights
-				off,weights = InterpolationKernels.compute_offset_and_weights(kernel, λidx)
-				off = Int(off) # + 1 a verifier
+				offweights = InterpolationKernels.compute_offset_and_weights(kernel, λidx)
+				weights = vcat(offweights[2]...)
+				off::Int = round(Int,offweights[1]) +1# + 1 a verifier
 				mx = off + lk
 				wsz = lk
 				if off < 0 
@@ -335,7 +349,11 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 				trans1 = profiles["$T1$T2-$chnl-C"].transmissions[1](λ)
 				trans2 = profiles["$T1$T2-$chnl-C"].transmissions[2](λ)
 
-				coherence = baseline_phasors[i][ci](λ)
+				if isnothing(closure_correction)
+					coherence = baseline_phasors[i][ci](λ)
+				else
+					coherence = baseline_phasors[i][ci](λ) .* closure_correction[i][off:(off+wsz-1)]
+				end
 				# Interferometry
 				trans =  weights.*sqrt(trans1*trans2) 
 				#Real
@@ -355,6 +373,7 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ T1
 				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
 				c = c+wsz
+
 				V[c:(c+wsz-1)] .= weights .*trans2
 				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ T2
 				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
@@ -362,7 +381,10 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 			end 
 		end
 	end
-	#return V,C,L,c-1,nL,nC, nelement
+	#= L = L[1:c-1]
+	C = C[1:c-1]
+	V = V[1:c-1]
+	return V,C,L,c-1,nL,nC, nelement =#
 #= 	L = L[1:c-1]
 	C = C[1:c-1]
 	V = V[1:c-1]
@@ -501,7 +523,7 @@ function build_baselinecloseMatrix(;baselines = baselines_list, triplets=triplet
 	return base2clos
 end
 
-function zeroclosure!(interferometric, closures;baselines = baselines_list, triplets=triplet_list)
+#= function zeroclosure!(interferometric, closures;baselines = baselines_list, triplets=triplet_list)
 	M = build_baselinecloseMatrix(;baselines = baselines, triplets=triplets)
 	C = dropdims(mean(cat(closures...,dims=3),dims=2),dims=2)
 	for l ∈ axes(C,1)
@@ -512,6 +534,37 @@ function zeroclosure!(interferometric, closures;baselines = baselines_list, trip
 		end
 	end
 end
+ =#
+
+ function zeroclosure!(interferometric, closures::Vector{Matrix{T}}) where T<:AbstractFloat
+	C = dropdims(mean(cat(closures...,dims=3),dims=2),dims=2)
+	interferometric[4] .*= exp.(-1im .* C[:,1])
+	interferometric[5] .*= exp.(+1im .* C[:,2])
+	interferometric[6] .*= exp.(+1im .* C[:,3])
+
+end
+
+function zeroclosure!(interferometric, bispectra::Vector{Matrix{Complex{T}}}) where T<:AbstractFloat
+	C = angle.(dropdims(mean(cat(bispectra...,dims=3),dims=2),dims=2))
+	interferometric[4] .*= exp.(-1im .* C[:,1]) 
+	interferometric[5] .*= exp.(+1im .* C[:,2])
+	interferometric[6] .*= exp.(+1im .* C[:,3])
+
+end
+
+function get_closure_correction( bispectra::Vector{Matrix{T}}) where T<:Complex
+	C = angle.(dropdims(mean(cat(bispectra...,dims=3)::Array{T, 3},dims=2),dims=2))
+	N = size(C,1)
+	correction = Vector{Vector{T}}(undef,6)
+	correction[1] = ones(T,N)
+	correction[2] = ones(T,N)
+	correction[3] = ones(T,N)
+	correction[4] = exp.(-1im .* C[:,1]) 
+	correction[5] = exp.(+1im .* C[:,2])
+	correction[6] = exp.(+1im .* C[:,3])
+	return correction
+end
+
 
 
 function mean_opd_create(visibilities::AbstractArray{T,3}, λ; kwds...) where T
