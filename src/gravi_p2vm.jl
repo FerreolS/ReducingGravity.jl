@@ -586,16 +586,22 @@ function mean_opd_create(ϕ::AbstractArray{T,2}, λ; lmin=1,lmax=size(ϕ,1),phi_
 	return opd #, gd
 end
 
-function mean_opd_create(A::AbstractArray{T,2}, λ; kwds...) where {T<:Complex}
+function mean_opd_create(A::AbstractArray{Complex{T},2}, λ; kwds...) where {T}
 	ϕ = angle.(A)
 	mean_opd_create(ϕ,λ; kwds...)
 end
 
-function compute_opd_gd(ϕ::AbstractArray{T,2}, λ; lmin=1,lmax=size(ϕ,1)) where T
+
+function compute_opd_gd(A::AbstractArray{Complex{T},2}, λ; kwds...) where {T}
+	ϕ = angle.(A)
+	compute_opd_gd(ϕ,λ; kwds...)
+end
+
+function compute_opd_gd(ϕ::AbstractArray{T,2}, λ; lmin=1,lmax=size(ϕ,1)) where T<:AbstractFloat
 	unwrap!(ϕ,dims=2)
 	N = size(ϕ,2)
 	w = T(2π) ./λ[lmin:lmax]
-	@show w0 = mean(w)
+	w0 = mean(w)
 	w .-= w0
 	opd = Vector{T}(undef,N)
 	gd = Vector{T}(undef,N)
@@ -608,7 +614,7 @@ function compute_opd_gd(ϕ::AbstractArray{T,2}, λ; lmin=1,lmax=size(ϕ,1)) wher
 end
 
 
-function compute_opd_gd(visdata::Vector{A}, λ; lmin=1,lmax=size(visdata[1],1)) where {T,A<:Matrix{Complex{T}}}
+function compute_opd_gd(visdata::Vector{Matrix{Complex{T}}}, λ; lmin=1,lmax=size(visdata[1],1)) where {T}
 	N = length(visdata)
 	gd = Vector{Vector{T}}(undef, N)
 	opd = Vector{Vector{T}}(undef, N)
