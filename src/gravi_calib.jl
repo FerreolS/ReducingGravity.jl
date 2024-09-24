@@ -196,12 +196,10 @@ function gravi_extract_profile_flats_from_p2vm(	P2VM::Dict{String, ConcreteWeigh
 			if haskey(spctr,name)
 				pr = (pr +  spctr[name])/2
 			end 
-			#sptr_array[i] = name=>pr
 			push!(spctr,name=>pr)
 		end
 		
 	end
-	#spctr = Dict(sptr_array)
 	return spctr
 	
 
@@ -257,11 +255,9 @@ function gravi_compute_gain_from_p2vm(	P2VM::Dict{String, ConcreteWeightedData{T
 		
 		for (baseline,data) ∈ P2VM
 			tel1,tel2 = baseline[5] , baseline[6]
-			#tel1,tel2 = baseline[5] < baseline[6] ? (baseline[5] , baseline[6]) : (baseline[6] , baseline[5])
 
 		
 			t1,t2 = key[1] , key[2] 
-			#t1,t2 = key[1] < key[2] ? (key[1],key[2]) : (key[2],key[1] )
 			
 			ill1 = (t1 == tel1) || (t1 == tel2) 
 			ill2 = (t2 == tel1) || (t2 == tel2) 
@@ -280,11 +276,9 @@ function gravi_compute_gain_from_p2vm(	P2VM::Dict{String, ConcreteWeightedData{T
 		end
 		
 	end
-	#return avg,prec
 	usable = ill .& goodpix  .& reduce(.&,prec .!=0, dims=3,init=true)[:,:,1]
 	gain, rov = build_ron_and_gain(usable,avg,prec; substract_dark=substract_dark,fix_gain=fix_gain)
 	darkp2vm = WeightedData(avg[:,:,5],prec[:,:,5])
-	#darkp2vm = WeightedData(avg,prec)
 
 	return darkp2vm,gain, rov
 
@@ -391,11 +385,9 @@ function gravi_compute_flat_and_dark_from_p2vm(	P2VM::Dict{String, Array{T, 3}},
 		
 		for (baseline,data) ∈ P2VM
 			tel1,tel2 = baseline[5] , baseline[6]
-			#tel1,tel2 = baseline[5] < baseline[6] ? (baseline[5] , baseline[6]) : (baseline[6] , baseline[5])
 
 		
 			t1,t2 = key[1] , key[2] 
-			#t1,t2 = key[1] < key[2] ? (key[1],key[2]) : (key[2],key[1] )
 			
 			ill1 = (t1 == tel1) || (t1 == tel2) 
 			ill2 = (t2 == tel1) || (t2 == tel2) 
@@ -407,19 +399,16 @@ function gravi_compute_flat_and_dark_from_p2vm(	P2VM::Dict{String, Array{T, 3}},
 				idx =  ind[i]
 				ind[i] += 1
 			end 
-			#avgbias, data = gravi_data_detector_cleanup(data,illuminated)
 			view(sorted,bbox,:,idx)  .= view(data,bbox,:)
 			
 		end
 		
 	end
-	#return sorted
 	wd = Vector{ConcreteWeightedData{T,2}}(undef,5)
 	gp = Vector{BitMatrix}(undef,5)
 	Threads.@threads for i∈1:5
 		wd[i], gp[i] = gravi_create_weighteddata(sorted[:,:,:,i],illuminated,goodpix,filterblink=filterblink,unbiased=unbiased,keepbias=true,cleanup=false)
 	end
-	#goodpix .&= reduce(.&,gp)
 	goodpix .&= gp[5]
 	Threads.@threads for i∈1:5
 		flagbadpix!(wd[i],.!goodpix)
@@ -458,10 +447,6 @@ function gravi_reorder_p2vm(	P2VM::Dict{String, Array{T, 3}},
 		tel1,tel2 = baseline[5] , baseline[6]
 		for (i,(key,(_,bbox))) ∈ enumerate(bboxes )
 			t1,t2 = key[1] , key[2] 
-			#tel1,tel2 = baseline[5] < baseline[6] ? (baseline[5] , baseline[6]) : (baseline[6] , baseline[5])
-
-		
-			#t1,t2 = key[1] < key[2] ? (key[1],key[2]) : (key[2],key[1] )
 			
 			ill1 = (t1 == tel1) || (t1 == tel2) 
 			ill2 = (t2 == tel1) || (t2 == tel2) 
@@ -475,7 +460,6 @@ function gravi_reorder_p2vm(	P2VM::Dict{String, Array{T, 3}},
 
 				ind[i] += 1
 			end 
-			#avgbias, data = gravi_data_detector_cleanup(data,illuminated)
 			view(sorted,bbox,:,idx)  .= view(data,bbox,:)
 			
 		end

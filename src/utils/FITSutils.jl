@@ -88,7 +88,3 @@ struct GravityData{T,N}
     cat::CATG   # category name
     type::DPRTYPE  # type name
 end
-
-function Base.read(ginfo::GravityFileInformation)
-	
-end

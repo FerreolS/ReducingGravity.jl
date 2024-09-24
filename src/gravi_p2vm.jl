@@ -409,10 +409,6 @@ function  get_correlatedflux(V2PM::AbstractMatrix{T},
 	nrow = size(V2PM,2) ÷ (6*2+4)
 	output = zeros(T,6*2+4,nrow,nframe)
 	Threads.@threads for t ∈ 1:nframe
-		#= A = Symmetric(V2PM'*spdiagm(view(precision,:,t))*V2PM)
-		b = V2PM'*(view(precision,:,t) .* view(val,:,t))[:]	
-		x,info= KrylovKit.linsolve(A,b; issymmetric=true,maxiter=maxiter,atol=atol,verbosity=1)
-		  =#
 		x = solveV2PM(V2PM, view(data,:,t),maxeval=maxeval)
 		view(output,:,:,t)[:] .= x[:]
 	end

@@ -7,9 +7,6 @@ struct InterpolatedSpectrum{T,B}
 	basis::B
 end
 
-#(self::InterpolatedSpectrum{B})(x) where B<:BSplineBasis = Spline(self.basis,self.coefs)(x)
-#(self::InterpolatedSpectrum{B})() where B<:BSplineBasis = Spline(self.basis,self.coefs)
-
 function (self::InterpolatedSpectrum{T,B})(x::AbstractVector{T2}) where {T,B<:Interpolator,T2<:Number}
 	(;knots, kernel) = self.basis
 	notnan = isfinite.(x)
@@ -32,17 +29,6 @@ function (self::InterpolatedSpectrum{T,B})(x::T2) where {T,B<:Interpolator,T2<:N
 	basis = build_interpolation_matrix(kernel,knots,x)
 	return (basis*self.coefs)[1]
 end
-#= 
-function (self::InterpolatedSpectrum{B})() where B<:Interpolator
-	basis = build_interpolation_matrix(kernel,knots,x)
-	return self.basis.basis * self.coefs
-end
-function recompute_basis(S::Interpolator,x)
-	(;knots, kernel, _) = S.basis
-	basis = build_interpolation_matrix(kernel,knots,x)
-	return Interpolator(knots, kernel, basis)
-end
- =#
 
 
 struct SpectrumModel{A,B,C,D,T}
@@ -102,7 +88,6 @@ function get_wavelength((;λ,λbnd, bbox)::SpectrumModel; bnd=false)
 	λdeg = length(λ)	
 	wv = p .^(0:(λdeg-1))'* λ
 	if bnd
-		#wv[ .!(λbnd[1] .<= wv .<=λbnd[2])] .= NaN
 		wv= wv[ (λbnd[1] .<= wv .<=λbnd[2])]
 	else
 		wv[ .!(λbnd[1] .<= wv .<=λbnd[2])] .= NaN

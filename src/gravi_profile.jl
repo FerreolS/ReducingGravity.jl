@@ -18,13 +18,11 @@ function fitprofile(data::AbstractWeightedData{T,2},
 	
 	specmodel = ProfileModel(bndbx[firstidx:lastidx,:];maxdeg = max(center_degree,σ_degree), precond=true)
 
-	#shp = (sum(data .* wght,dims=1)./ sum(wght,dims=1))[:]
 
 
 	center = zeros(center_degree+1)
 	σ = zeros(σ_degree+1,nb_σ)
 	if isnothing(center_guess)
-		#center[1] = mean(bndbx.indices[2])
 		ax,ay =  bndbx[firstidx:lastidx,:].indices
 		ax = Float64.(ax)
 		c = reshape(sum(data.val.*sqrt.(data.precision).* ay', dims=2) ./ sum(sqrt.(data.precision).* data.val, dims=2),:)
@@ -34,12 +32,6 @@ function fitprofile(data::AbstractWeightedData{T,2},
 		VB = Vandermonde*B
 		center = (B*((VB'*VB)\VB')*c[valid])[:]
 
-	#= 	s = sqrt.(max.(0.,reshape(sum(data.val.*data.precision.* (ay'.-c).^2, dims=2) ./ sum(data.precision.* data.val, dims=2),:)))
-		valid = isfinite.(s)
-		Vandermonde = reduce(hcat,[ ax[valid].^n  for n ∈ 0:center_degree])
-		B = diagm(1. ./sqrt.(sum(Vandermonde.^2,dims=1)[:]))
-		VB = Vandermonde*B
-		σ_guess = (B*((VB'*VB)\VB')*s[valid])[:] =#
 
 	else
 		l = min(length(center_guess),center_degree+1)
@@ -58,9 +50,6 @@ function fitprofile(data::AbstractWeightedData{T,2},
 	f(params) = scaledlikelihood(data,specmodel(;unflatten(params)...))
 	xopt, info = prima(f, params; maxfun=10_000,ftarget=length(data))
 	
-	#res = optimize(f, params, NelderMead(),Optim.Options(iterations=10000))
-	#xopt = Optim.minimizer(res)
-
 	θopt= unflatten(xopt)
 	(;center,σ) = θopt
 
@@ -127,7 +116,6 @@ function gravi_extract_profile(data::AbstractWeightedData{T,N},
 								robust=false,
 								kwds...
 								) where {T,N}
-	#bbox = profile.bbox
 	bbox = CartesianIndices((get_wavelength_bounds_inpixels(profile),profile.bbox.indices[2]))
 	if  ndims(bbox)<N
 		(;val, precision) = view(data,bbox,:)
@@ -136,7 +124,6 @@ function gravi_extract_profile(data::AbstractWeightedData{T,N},
 	end
 	model =  T.(get_profile(profile))
 	if restrict>0
-		#model .*= (model .> restrict)
 		precision .*=  (model .> restrict)
 	end
 
