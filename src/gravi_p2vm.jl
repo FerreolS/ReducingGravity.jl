@@ -431,7 +431,7 @@ end
 
 function get_bispectrum(interferometric::AbstractVector{A};
 					triplets=triplet_list,
-					baselines = baselines_list) where{T,N,A<:AbstractArray{Complex{T},N}}
+					baselines::Vector{Vector{Int64}} = baselines_list) where{T,N,A<:AbstractArray{Complex{T},N}}
 
 	bispectrum = Vector{Array{Complex{T},N}}(undef,length(triplets))
 	for (i,triplet) ∈ enumerate(triplets)
@@ -439,24 +439,24 @@ function get_bispectrum(interferometric::AbstractVector{A};
 		b1 = findfirst(x->x== [T1,T2] ,baselines)
 		if isnothing(b1)
 			b1 = findfirst(x->x== [T2,T1] ,baselines)
-			p1 = exp.(-1im.*angle.(interferometric[b1]))
-		else
-			p1 = exp.(1im.*angle.(interferometric[b1]))
+			p1 = conj.(interferometric[b1])
+		else 
+			p1 = interferometric[b1]
 		end
 		b2 = findfirst(x->x== [T2,T3] ,baselines)
 		if isnothing(b2)
 			b2 = findfirst(x->x== [T3,T2] ,baselines_list)
-			p2 = exp.(-1im.*angle.(interferometric[b2]))
+			p2 = conj.(interferometric[b2])
 		else
-			p2 = exp.(1im.*angle.(interferometric[b2]))
+			p2 = interferometric[b2]
 		end
 
 		b3 = findfirst(x->x== [T3,T1] ,baselines_list)
 		if isnothing(b3)
 			b3 = findfirst(x->x== [T1,T3] ,baselines_list)
-			p3 = exp.(-1im.*angle.(interferometric[b3]))
+			p3 = conj.(interferometric[b3])
 		else
-			p3 = exp.(1im.*angle.(interferometric[b3]))
+			p3 = interferometric[b3]
 		end
 		bispectrum[i] = ( p1.*p2.*p3)
 	end
