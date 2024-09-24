@@ -164,7 +164,8 @@ function gravi_build_p2vm_interf(p2vm_data::AbstractWeightedData{T,N},
 	λ = itrp.knots
 	Threads.@threads for (i,baseline) ∈ collect(enumerate(baselines))
 		T1,T2 = baseline
-		phi_sign = T1 > T2 ? -1 : 1
+		#phi_sign = T1 > T2 ? -1 : 1
+		phi_sign = 1
 		A = gravi_extract_channel(p2vm_data,profiles["$T1$T2-A-C"],lamp)
 		B = gravi_extract_channel(p2vm_data,profiles["$T1$T2-B-C"],lamp)
 		C = gravi_extract_channel(p2vm_data,profiles["$T1$T2-C-C"],lamp)
@@ -231,16 +232,16 @@ function get_selected_wavelenght(profiles;
 end
 
 
-function make_pixels_vector(data::AbstractWeightedData,
+function make_pixels_vector(data::AbstractWeightedData{T,N},
 							profiles::AbstractDict,
 							wvidx::Vector{Matrix{Int}}; 
-							baselines=baselines_list, kwds...)  
+							baselines=baselines_list, kwds...)   where {T,N}
 	
 	nframe = size(data,3)
 	nmeasuredλ = maximum(maximum(diff(w,dims=1)) for w ∈ wvidx) +1				
 	nL = 4*6*nmeasuredλ
-	v = zeros(Float64,nL,nframe)
-	w = zeros(Float64,nL,nframe)
+	v = zeros(T,nL,nframe)
+	w = zeros(T,nL,nframe)
 	for t ∈ axes(data,3)
 		for (i,baseline) ∈ enumerate(baselines)
 			T1,T2 = baseline
@@ -333,14 +334,14 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 				weights = vcat(offweights[2]...)
 				off::Int = round(Int,offweights[1]) +1# + 1 a verifier
 				mx = off + lk
-				wsz = lk
+				wsz::Int = lk
 				if off < 0 
 					weights = weights[(1 - off):end]
 					off = 0			
 					weights = (sw=sum(weights))==0 ? weights : weights./sw
 					wsz = length(weights)
-				elseif (off+lk) > (nC÷16)
-					mx = min(off + lk, nC )
+				elseif (off+lk) > (nλ)
+					mx = min(off + lk, nλ )
 					weights = weights[1:(mx-off)] 
 					weights = (sw=sum(weights))==0 ? weights : weights./sw
 					wsz = length(weights)
