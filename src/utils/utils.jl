@@ -6,7 +6,14 @@ function unwrap!(x::AbstractVector{T}; period = 2π) where T
 	end
 end
 
-function affine_solve(data::AbstractVector,abscisse::AbstractVector)
+function unwrap(x::AbstractVector{T};  kwds...) where T 
+	output = copy(x)
+	unwrap!(output; kwds...)
+	return output
+end
+
+
+function affine_solve(data::AbstractArray,abscisse::AbstractArray)
 	N = length(data)
 	length(abscisse) == N || error("data and abscisse does not have the same lenght")
 	st = zero(promote_type(eltype(data),eltype(abscisse)))

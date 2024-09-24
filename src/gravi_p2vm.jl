@@ -574,10 +574,20 @@ function gravi_compute_envelope(opd::AbstractVector{T}, λ,R) where {T}
 	return envellope
 end
 
-function unwrap!(ϕ::AbstractMatrix{T}; period = 2π) where T 
-	unwrap!(view(ϕ,:,1))
-	for x = eachslice(ϕ,dims=1)
-		unwrap!(view(x,:))
+function unwrap(ϕ::AbstractMatrix{T}; kwds...) where T 
+	output = copy(ϕ)
+	unwrap!(output; kwds...)
+	return output
+end
+
+function unwrap!(ϕ::AbstractMatrix{T}; period = 2π,dims=1) where T 
+	if dims==1 
+		unwrap!(view(ϕ,:,1))
+	else
+		unwrap!(view(ϕ,1,:))
+	end
+	for x = eachslice(ϕ,dims=dims)
+		unwrap!(view(x,:); period=period)
 	end
 end
 
