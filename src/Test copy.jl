@@ -70,7 +70,7 @@ tλ = ReducingGravity.build_wavelength_range(profiles)
 #itrp4 = ReducingGravity.Interpolator(tλ4,CatmullRomSpline{Float32}())
 
 itrp = ReducingGravity.Interpolator(tλ,CatmullRomSpline{Float32}())
-baseline_phasors, baseline_visibilities =  gravi_build_p2vm_interf(wd - darkp2vm,itrp, profiles,lamp;loop_with_norm=3,loop=5, rgl_phasor=1000,rgl_vis=1000)
+baseline_phasors, baseline_visibilities =  gravi_build_p2vm_interf(wd - darkp2vm,itrp, profiles,lamp;loop=5, rgl_phasor=1000,rgl_vis=1000)
 #gravi_build_p2vm_interf(wd - darkp2vm,profiles,lamp; loop_with_norm=10, loop=2)
 S,tλ,wvidx = gravi_build_V2PM(profiles,baseline_phasors;λmin=2e-6,λmax=2.5e-6)
 #wdp = ReducingGravity.make_pixels_vector(view(p12,:,:,100) - darkflat,profiles,wvidx);
@@ -103,7 +103,7 @@ sum(abs2,filter(isfinite,(phase.-v)))
 p12 = gravi_create_weighteddata(P2VM["P2VM12"], illuminated,goodpix,rov, gain)
 wdp = ReducingGravity.make_pixels_vector(view(p12,:,:,100) - darkflat,profiles,wvidx);
 Cx = pinv(Symmetric(Array(S'*(wdp.precision.*S))))
-xx = Cx*S'*(wdp.precision.*val);
+xx = Cx*S'*(wdp.precision.* wdp.val);
 xx = reshape(xx,6*2+4,:);
 ww = sqrt(Symmetric(Cx))
 stdxx = diag(ww)
@@ -118,21 +118,20 @@ S,tλ,wvidx = gravi_build_V2PM(profiles,baseline_phasors)
 wvscfits = read(FITS(first(filter(x -> (occursin(r"(WAVE,SC)", x.second.type)), flist)).first)["IMAGING_DATA_SC"]);
 wvsc = gravi_create_weighteddata(wvscfits, illuminated,goodpix,rov, gain)
 wvsc = ReducingGravity.make_pixels_vector(wvsc - darkflat,profiles,wvidx);
-#wvsc1 = view(wvsc,:,1:5)
-wvcorr = ReducingGravity.get_correlatedflux(S,wvsc)
+wvsc1 = view(wvsc,:,1:5)
+wvcorr = ReducingGravity.get_correlatedflux(S,wvsc1)
 photometric,interferometric = ReducingGravity.extract_correlated_flux(wvcorr)
-closure = ReducingGravity.get_closure(interferometric)
-ReducingGravity.zeroclosure!(interferometric, closure)
-
+bispectra = ReducingGravity.get_bispectrum(interferometric)
+clcorr=ReducingGravity.get_closure_correction(bispectra)
+S,λ,wvidx = gravi_build_V2PM(profiles,baseline_phasors;λsampling=λ,λmin=1.96e-6,λmax=2.5e-6, closure_correction=clcorr)
 
 fdark3 = read(FITS(first(filter(x -> (occursin(r"(DARK)", x.second.type) && x.second.Δt==3.0), flist)).first)["IMAGING_DATA_SC"]);
 goodpix3 = gravi_compute_badpix(fdark3,illuminated, spatialkernel=(11,1))
-dark3,goodpix = gravi_create_weighteddata(fdark3,illuminated,goodpix3.&&goodpix; filterblink=true, blinkkernel=(1,1,9),keepbias=true)
-
+dark3,goodpix = gravi_create_weighteddata(fdark3,illuminated,goodpix3.&&goodpix; filterblink=true, blinkkernel=(9),keepbias=true)
 
 sky3 = read(FITS(first(filter(x -> (occursin(r"(SKY)", x.second.type) && x.second.Δt==3.0), flist)).first)["IMAGING_DATA_SC"]);
 goodpix3 = gravi_compute_badpix(sky3,illuminated, spatialkernel=(11,1))
-sky3,goodpix = gravi_create_weighteddata(sky3,illuminated,goodpix3.&&goodpix; filterblink=true, blinkkernel=(1,1,5),keepbias=true)
+sky3,goodpix = gravi_create_weighteddata(sky3,illuminated,goodpix3.&&goodpix; filterblink=true, blinkkernel=(5),keepbias=true)
 
 object3 = read(FITS(first(filter(x -> (occursin(r"(OBJECT)", x.second.type) && x.second.Δt==3.0), flist)).first)["IMAGING_DATA_SC"]);
 object3 = gravi_create_weighteddata(object3,illuminated, goodpix3.&&goodpix, rov, gain)
