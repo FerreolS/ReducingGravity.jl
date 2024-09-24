@@ -191,3 +191,25 @@ function gravi_extract_profile(	data::AbstractArray{T,N},
 	end
 	return profiles
 end
+
+function gravi_get_usefull_pixels(profiles::AbstractDict,
+									goodpix::BitMatrix;
+									restrict=0.0  )
+	sz = size(goodpix)
+	ill = falses(sz)
+	for profile ∈ values(profiles )
+
+		bbox = profile.bbox
+
+		if restrict>0
+			model =  get_profile(profile, bbox)
+			bbox = bbox[model .> restrict]
+		else
+			bbox = bbox[:]
+		end
+		
+		view(ill,bbox) .= true
+				
+	end
+	return ill .& goodpix 
+end

@@ -343,30 +343,33 @@ function gravi_compute_gain_from_p2vm(	flats::Vector{C},
 	avg[:,:,end] = dark.val
 	prec[:,:,end] = dark.precision
 
-
-	ill = falses(sz)
-	for profile ∈ values(profiles )
-
-		bbox = profile.bbox
-
-		if restrict>0
-			model =  get_profile(profile, bbox)
-			bbox = bbox[model .> restrict]
-		else
-			bbox = bbox[:]
-		end
-		
-		view(ill,bbox) .= true
-				
-	end
-	usable = ill .& goodpix  .& reduce(.&,prec .!=0, dims=3,init=true)[:,:,1]
+	usable = gravi_get_usefull_pixels(profiles,goodpix)
+	usable .&=  reduce(.&,prec .!=0, dims=3,init=true)[:,:,1]
 	gain, rov = build_ron_and_gain(usable,avg,prec; substract_dark=substract_dark,fix_gain=fix_gain)
 
 	return gain, rov
 
 end
 
- 
+function gravi_reestimate_rov_percolumn_from_dark((;val,precision)::AbstractWeightedData,
+										gain::Vector{T},
+										profiles::AbstractDict,
+										goodpix::BitMatrix) where T
+	rov = zeros(T,length(gain))
+	usable = gravi_get_usefull_pixels(profiles,goodpix)
+	 
+	for i ∈ axes(usable,1)
+		u = findall(usable[i,:] )
+		a = (view(val[i,:,:],u,:))[:]
+		v = (1 ./ view(precision[i,:,:],u,:))[:]
+		
+		rov[i] = median( v .- a./gain[i])
+	end
+	return rov
+				
+
+	
+end
 
 function gravi_compute_flat_and_dark_from_p2vm(	P2VM::Dict{String, Array{T, 3}}, 
 										bboxes::Dict{String,C},
