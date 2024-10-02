@@ -200,12 +200,19 @@ end
 function build_wavelength_range(profiles;
 								padding=0, 
 								λmin=0,
-								λmax=1) 
+								λmax=1,
+								narrow=false) 
 
-	λstep = minimum([mean(diff(get_wavelength(p; bnd=true))) for p ∈ values(profiles)])
+	λstep = maximum([ (-((t=get_wavelength(p;bnd=true))[[end 1]]...))/(length(t)-1)  for p ∈ values(profiles)])
 
-	wvmin = max(λmin,minimum([p.λbnd[1] for p ∈ values(profiles)]))
-	wvmax = min(λmax,maximum([p.λbnd[2] for p ∈ values(profiles)]))
+
+	if narrow
+		wvmin = max(λmin,maximum([p.λbnd[1] for p ∈ values(profiles)]))
+		wvmax = min(λmax,minimum([p.λbnd[2] for p ∈ values(profiles)]))
+	else
+		wvmin = max(λmin,minimum([p.λbnd[1] for p ∈ values(profiles)]))
+		wvmax = min(λmax,maximum([p.λbnd[2] for p ∈ values(profiles)]))
+	end
 
 	return range(wvmin - padding * λstep,wvmax  +padding *  λstep; step = λstep)
 
@@ -626,7 +633,7 @@ function gravi_compute_envelope(opd::AbstractVector{T}, λ) where {T}
 	nt = length(opd)
 
 	# Compute delta_lambda and lambda from experience 
-	Δλ = mean(diff(λ))*3
+	Δλ =  (λ[end] - λ[1])/(length(λ)-1)*3
 
 
 	coh_len = @.  T(λ^2 / Δλ)
