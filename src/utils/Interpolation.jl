@@ -73,9 +73,13 @@ function compute_coefs(K::AbstractMatrix,
 						w::AbstractMatrix) 
 						
 	out = similar(y,(size(K,2),size(y,2)))
-	@inbounds @simd for i ∈ axes(y,2)
+	@inbounds Threads.@threads for i ∈ axes(y,2)
 		out[:,i] .= compute_coefs(K,y[:,i],w[:,i])
 	end	
+#= 
+	Threads.@threads for (oi,yi,wi) ∈ zip(eachcol(out),eachcol(y),eachcol(w))
+		oi .= compute_coefs(K,yi,wi)
+	end	 =#
 	return out	
 end
 
