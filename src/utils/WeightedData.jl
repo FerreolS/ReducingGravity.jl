@@ -92,11 +92,11 @@ function getamplitude(data::AbstractWeightedData,model)
 	return max.(0,pinv(model' * ( data.precision.* model))*model'* (data.precision .* (data.val )))
 end
 function ChainRulesCore.rrule( ::typeof(getamplitude),data::AbstractWeightedData,model)
-	∂Y(Δy) = (NoTangent(),NoTangent(), ZeroTangent())
+	∂Y(_) = (NoTangent(),NoTangent(), ZeroTangent())
 	return getamplitude(data, model), ∂Y
 end
 
 function ChainRulesCore.frule( ::typeof(getamplitude),data::AbstractWeightedData,model)
-	∂Y(Δy) = (NoTangent(),NoTangent(), ZeroTangent())
+	∂Y(_) = (NoTangent(),NoTangent(), ZeroTangent())
 	return getamplitude(data, model), ∂Y
 end
