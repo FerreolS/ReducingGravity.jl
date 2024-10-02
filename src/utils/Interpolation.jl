@@ -10,14 +10,20 @@ function build_interpolation_matrix(kernel::Kernel{T,N}, knots, samples) where {
 	K = zeros(T,lin,col)
  	for (l,sample) ∈ enumerate(samples)
 		off, weights = InterpolationKernels.compute_offset_and_weights(kernel,T.(find_index(knots,sample))) 
-		off = Int(off)
+		off = Int(off) 
 		mx = off + N
-		if off < 0 
+		if off <= 0 
+			if (off+N)<=0 
+				continue
+			end
 			s = sum(weights[1:(1-off)])
 			weights = weights[(1 - off):end]
 			weights = (s,weights[2:end]...)
 			off = 0			
 		elseif (off+N) > col
+			if off>=col 
+				continue
+			end
 			mx = min(off + N, col )
 			s = sum(weights[(mx-off):end])
 			weights = weights[1:(mx-off)] 
