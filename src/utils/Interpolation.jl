@@ -9,27 +9,27 @@ function build_interpolation_matrix(kernel::Kernel{T,N}, knots, samples) where {
 	col = length(knots) 
 	K = zeros(T,lin,col)
  	for (l,sample) ∈ enumerate(samples)
-		off, weights = InterpolationKernels.compute_offset_and_weights(kernel,T.(find_index(knots,sample))) 
-		off = Int(off) 
-		mx = off + N
+		offweights = InterpolationKernels.compute_offset_and_weights(kernel,T.(find_index(knots,sample))) 
+		weights = vcat(offweights[2]...)
+		off::Int = round(Int,offweights[1]) +1
+
 		if off <= 0 
 			if (off+N)<=0 
 				continue
 			end
-			s = sum(weights[1:(1-off)])
 			weights = weights[(1 - off):end]
-			weights = (s,weights[2:end]...)
-			off = 0			
+			off = 1			
+			weights = (sw=sum(weights))==0 ? weights : weights./sw
 		elseif (off+N) > col
-			if off>=col 
+			if off>col 
 				continue
 			end
-			mx = min(off + N, col )
-			s = sum(weights[(mx-off):end])
-			weights = weights[1:(mx-off)] 
-			weights = (weights[1:end-1]...,s)
+
+			weights = weights[1:(col-off+1)] 
+			weights = (sw=sum(weights))==0 ? weights : weights./sw
 		end
-		K[l,(off+1):mx] .= weights
+		wsz = length(weights)
+		K[l,off:(off+wsz-1)] .= weights
 	end
 	return K
 end
