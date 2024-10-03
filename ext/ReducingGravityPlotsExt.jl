@@ -1,5 +1,6 @@
 module ReducingGravityPlotsExt
 using Plots
+import ReducingGravity:AbstractWeightedData
 
 @recipe function f((;val,precision)::AbstractWeightedData)
 	extval = extrema(val)

@@ -93,6 +93,7 @@ function get_wavelength((;λ,λbnd, bbox)::SpectrumModel; bnd=false)
 
 	return wv
 end
+
 get_wavelength_bounds_inpixels((;bbox)::SpectrumModel{A,Nothing,C,D,E}) where {A,C,D,E} = bbox.indices[1]
 
 function get_wavelength_bounds_inpixels((;λ,λbnd, bbox)::SpectrumModel{A,B,C,D,E}) where {A,B,C,D,E}
