@@ -1,22 +1,22 @@
 module ReducingGravity
 
-using 	FITSIO,
-		LinearAlgebra,
-		Statistics, 
+using 	Accessors,
 		ArrayTools, 
-		StatsBase,
-		Statistics,
-		Optim, 
-		Optimisers, 
-		StaticArrays,
-		Zygote,
 		ChainRulesCore,
-		Accessors,
-		OptimPackNextGen,
+		EasyFITS,
+		FITSHeaders,
 		InterpolationKernels,
-		SparseArrays,
+		LinearAlgebra,
+		Optim, 
+		OptimPackNextGen,
+		Optimisers, 
 		PRIMA,
-		Tullio
+		SparseArrays,
+		StaticArrays,
+		Statistics, 
+		StatsBase,
+		Tullio,
+		Zygote
 
 import 	ImageFiltering: mapwindow
 
@@ -58,15 +58,15 @@ include("gravi_p2vm.jl")
 #@enum Resolution LOW MED HIGH 
 
 
-function gravi_data_create_bias_mask(darkfits::FITS)
+function gravi_data_create_bias_mask(darkfits::FitsFile)
 
 	#read_key(darkfits[1],"ESO DPR TYPE")=="DARK" || error("must be dark file")
 	xname = ["LEFT","HALFLEFT","CENTER","HALFRIGHT","RIGHT"]
-	resolution = read_key(darkfits[1],"ESO INS SPEC RES")[1]
+	resolution = darkfits[1]["ESO INS SPEC RES"].string
 	
-	nx,ny,nf = size(darkfits["IMAGING_DATA_SC"])
+	nx,ny,nf = darkfits["IMAGING_DATA_SC"].data_size
 	illuminated = falses(nx,ny)
-	IMAGING_DETECTOR_SC = Dict(darkfits["IMAGING_DETECTOR_SC"])
+	IMAGING_DETECTOR_SC =read(darkfits["IMAGING_DETECTOR_SC"])
 
 	nregion = length(IMAGING_DETECTOR_SC["REGNAME"])
 
@@ -229,6 +229,7 @@ function gravi_create_weighteddata(	data::AbstractArray{T,3},
 									ron;
 									cleanup=true,
 									keepbias=true,
+									correct_gain=false,
 									bndbox = CartesianIndices(goodpix),
 									kwd...) where T
 	
@@ -241,6 +242,12 @@ function gravi_create_weighteddata(	data::AbstractArray{T,3},
 	goodpix = view(goodpix,bndbox)
 	avg = data.*goodpix
 	wgt = goodpix ./ (ron .+ gain .\ max.(zero(T),avg) .+ T(1/12) )
+	
+
+	if correct_gain
+		avg ./= gain
+		wgt .*= gain.^2
+	end	
 
 	weighteddata = WeightedData(avg,wgt) 
 	return weighteddata
