@@ -37,6 +37,16 @@ function gravi_compute_wavelength_bounds(spectra::Dict{String, ConcreteWeightedD
 end
 
 
+function reset_wavelength_bounds!(profiles::Dict{String,SpectrumModel{A,B,C,D,E}},λmin, λmax) where {A,B,C,D,E} 
+	pr_array = Vector{Pair{String,SpectrumModel{A,B,C,D,E}}}(undef,length(profiles))
+
+	for (i,(key,profile)) ∈ enumerate(profiles)
+		@reset profile.λbnd = [λmin, λmax]
+		profiles[key] = profile
+	end
+end
+
+
 function gravi_compute_transmissions(  spectra::Dict{String, ConcreteWeightedData{T,N}},
 										profiles::Dict{String,SpectrumModel{A,B,C,D,T}},
 										lamp;
@@ -84,8 +94,8 @@ function gravi_init_transmissions(profiles::Dict{String,SpectrumModel{A,B,C,D,E}
 									kwds...
 									) where {A,B,C,D,E} 
 									
-	λmin = minimum([max(p.λbnd[1],	minimum(filter!(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
-	λmax = maximum([min(p.λbnd[2],	maximum(filter!(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
+	λmin = minimum([max(p.λbnd[1],	minimum(filter(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
+	λmax = maximum([min(p.λbnd[2],	maximum(filter(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
 	knt =  range(T(λmin),T(λmax),nb_transmission_knts)
 
 
@@ -93,9 +103,9 @@ function gravi_init_transmissions(profiles::Dict{String,SpectrumModel{A,B,C,D,E}
 	pr_array = Vector{Pair{String,SpectrumModel{A,B,Interpolator{typeof(knt),typeof(kernel)},D,T}}}(undef,length(profiles))
 	for (i,(key,profile)) ∈ collect(enumerate(profiles) )
 		λ = get_wavelength(profile)
-		λ = λ[isfinite.(λ)]
+		λp = λ[isfinite.(λ)]
 		S = Interpolator(knt,kernel)
-		initcoefs = compute_coefs(S,λ, ones(T,length(λ)))
+		initcoefs = compute_coefs(S,λp, ones(T,length(λp)))
 		@reset profile.transmissions = [InterpolatedSpectrum(copy(initcoefs),S)
 										InterpolatedSpectrum(copy(initcoefs),S)]
 		pr_array[i] = key=>profile
@@ -138,8 +148,8 @@ function gravi_compute_lamp(spectra::Dict{String, S},
 	local Bs
 
 	if isnothing(init_lamp)
-		λmin = minimum([max(p.λbnd[1],	minimum(filter!(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
-		λmax = maximum([min(p.λbnd[2],	maximum(filter!(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
+		λmin = minimum([max(p.λbnd[1],	minimum(filter(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
+		λmax = maximum([min(p.λbnd[2],	maximum(filter(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
 		knt = range(T.(λmin),T.(λmax),nb_lamp_knts)
 		Bs =  Interpolator(knt,kernel)
 	else
