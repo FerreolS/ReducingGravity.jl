@@ -160,7 +160,7 @@ end
 function gravi_extract_profile(	data::AbstractWeightedData{T,N},	
 								profile::AbstractDict; 
 								kwds...) where {T,N}
-	profiles = Dict{String,ConcreteWeightedData{T,1}}()
+	profiles = Dict{String,ConcreteWeightedData{T,N-1}}()
 	for (key,val) ∈ profile
 		push!(profiles,key=>gravi_extract_profile(data ,val; kwds...))
 	end
