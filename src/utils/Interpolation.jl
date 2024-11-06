@@ -95,13 +95,20 @@ compute_coefs(K::AbstractMatrix,(;val,precision)::AbstractWeightedData) = comput
 function compute_coefs(I::Interpolator, x,A::AbstractWeightedData; Chi2 =nothing)
 		isnothing(Chi2) && return compute_coefs(I, x,A.val,A.precision)
 		return compute_coefs(I, x,A,Chi2)
-	end
+end
 
 function compute_coefs((;kernel, knots)::Interpolator, x,A::AbstractWeightedData,Chi2::Float64) 
 	T = eltype(kernel)
 	(;val, precision) = A
 	N = sum(precision .>0)
 	K = build_interpolation_matrix(kernel,knots,x)
+	compute_coefs(K,A,Chi2)
+end
+
+
+function compute_coefs(K::AbstractMatrix{T},A::AbstractWeightedData,Chi2::Float64)  where T
+	(;val, precision) = A
+	N = sum(precision .>0)
 	#R = build_interpolation_matrix(kernel',knots,x)
 	KK = Symmetric(K' * (precision .* K))
 	RR = make_DtD(T,size(KK,1))
@@ -127,7 +134,7 @@ function compute_coefs((;kernel, knots)::Interpolator, x,A::AbstractWeightedData
 			return Symmetric(pinv(KK)) *  B
 		end
 	end
-	b= 1.
+	b=-8.
 	fb = f(b)
 	while fb < 0
 		a=b
@@ -135,6 +142,7 @@ function compute_coefs((;kernel, knots)::Interpolator, x,A::AbstractWeightedData
 		b += 1
 		fb = f(b)
 	end	
+	@debug a,fa,b,fb
 	(μ, f1, lo1, hi1, n1)  = OptimPackNextGen.Brent.fzero(f,a,fa,b,fb)
 	@debug	μ, f1, lo1, hi1, n1
 	C = Symmetric( KK .+ T(10.0.^μ).* RR)

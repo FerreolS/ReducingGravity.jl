@@ -1,6 +1,6 @@
 const baselines_list =[[1,2],[1,3],[4,1],[2,3],[4,2],[4,3]]
 const triplet_list =[[1,2,3],[1,2,4],[1,3,4],[2,3,4]]
-@enum Chnl chnlA=1 chnlB=2 chnlC=3 chnlD=4
+@enum Chnl cA=1 cB=2 cC=3 cD=4
 Base.to_index(s::Chnl) = Int(s)
 
 function  gravi_extract_channel(data::AbstractWeightedData{T,N},
@@ -76,6 +76,140 @@ function solve_phasor(phi::AbstractArray{T,N},
 end
 
 
+function gravi_build_ABCD_phasors!(phasors,ϕ::AbstractArray{T,N},Ichnl,Pchnl1,Pchnl2,K)  where {T,N}
+	#= 
+	for c in instances(Chnl)
+		pA = build_phase(H,channels[c])
+	end =#
+	nt = size(ϕ,3)
+	nl,np = size(K[1])
+	for c ∈ instances(Chnl)
+		phi = zeros(T,2,nl,nt)
+		@inbounds @simd for i in axes(phi, 3)
+			mul!(@view(phi[1, :, i]), K[c], @view(ϕ[1, :, i]))
+			mul!(@view(phi[2, :, i]), K[c], @view(ϕ[2, :, i]))
+		end
+		
+		solve_phasor_flat!(@view(phasors[:,:,c]),phi,Ichnl[c],Pchnl1[c],Pchnl2[c])
+	end
+	return phasors
+end
+
+function gravi_build_ABCD_phasors(phi::AbstractArray{T,N},Ichnl,Pchnl1,Pchnl2,K) where {T,N}
+	if N==2
+		#phi = reshape(phi,size(phi,1),1,size(phi,2))
+		#phi = cat(cos.(phi),sin.(phi),dims=2)
+		phi = reshape(phi,1,size(phi,1),size(phi,2))
+		phi = cat(cos.(phi),sin.(phi),dims=1)
+	end
+	nl = size(K[1],1)
+	phasors = zeros(T,4,nl,4)
+	#trans1 = zeros(T,2,nl)
+	#trans2 = zeros(T,2,nl)
+	
+	gravi_build_ABCD_phasors!(phasors,phi,Ichnl,Pchnl1,Pchnl2,K)
+end
+
+
+
+function solve_phasor_flat!(phasors,
+						phi::AbstractArray{T,N}, 
+						p2vm::AbstractWeightedData,
+						flat1::AbstractWeightedData,
+						flat2::AbstractWeightedData;
+					) where {T,N}
+
+
+					
+	nframe = size(phi,3)
+	nλ = size(phi,2)
+	
+	for l ∈ 1:nλ
+		H = zeros(T,nframe+2,4)
+		H[1:nframe, 1] .= T(1)
+		H[1:nframe, 2] .= T(1)
+		H[ nframe+1, 1] = T(1)
+		H[ nframe+2, 2] = T(1)
+		H[ 1:nframe, 3] .= phi[1, l, :]
+		H[ 1:nframe, 4] .= phi[2, l,  :]
+		
+		val = zeros(T,nframe+2)
+		val[1:nframe] .= p2vm.val[l,:]
+		val[nframe+1] = flat1.val[l]
+		val[nframe+2] = flat2.val[l]
+		precision = zeros(T,nframe+2)
+		precision[1:nframe] .= p2vm.precision[l,:]
+		precision[nframe+1] = 512*flat1.precision[l]
+		precision[nframe+2] = 512*flat2.precision[l]
+		
+		
+		HtH = Symmetric(H'*(precision.*H))
+		
+		F = cholesky(HtH; check=false)
+		if issuccess(F)
+			v = F \ (H'*(precision.*val))
+		else
+			v = pinv(Array(HtH)) * (H'*(precision .* val))
+		end
+		@debug "phasor lkl : $(likelihood(WeightedData(val[:], precision[:]),CC*v )./length(val))"
+		phasors[:,l] .= v
+	end
+	return  phasors
+
+end
+
+
+
+function solve_phasor_flat(phi::AbstractArray{T,N}, 
+						p2vm::AbstractWeightedData,
+						flat1::AbstractWeightedData,
+						flat2::AbstractWeightedData;
+					) where {T,N}
+
+
+					
+	nframe = size(phi,3)
+	nλ = size(phi,2)
+	trans1 = zeros(T,nλ)
+	trans2 = zeros(T,nλ)
+	coherence = zeros(T,2,nλ)
+	for l ∈ 1:nλ
+		H = zeros(T,nframe+2,4)
+		H[1:nframe, 1] .= T(1)
+		H[1:nframe, 2] .= T(1)
+		H[ nframe+1, 1] = T(1)
+		H[ nframe+2, 2] = T(1)
+		H[ 1:nframe, 3] .= phi[1, l, :]
+		H[ 1:nframe, 4] .= phi[2, l,  :]
+		
+		val = zeros(T,nframe+2)
+		val[1:nframe] .= p2vm.val[l,:]
+		val[nframe+1] = flat1.val[l]
+		val[nframe+2] = flat2.val[l]
+		precision = zeros(T,nframe+2)
+		precision[1:nframe] .= p2vm.precision[l,:]
+		precision[nframe+1] = 512*flat1.precision[l]
+		precision[nframe+2] = 512*flat2.precision[l]
+		
+		
+		HtH = Symmetric(H'*(precision.*H))
+		
+		F = cholesky(HtH; check=false)
+		if issuccess(F)
+			v = F \ (H'*(precision.*val))
+		else
+			v = pinv(Array(HtH)) * (H'*(precision .* val))
+		end
+		@debug "phasor lkl : $(likelihood(WeightedData(val[:], precision[:]),CC*v )./length(val))"
+		trans1[l] = v[1]
+		trans2[l] = v[2]
+		coherence[1:2,l] .= v[3:4]
+	end
+	return  trans1,trans2,coherence
+
+end
+
+
 function gravi_initial_input_phase(A,KA,B,KB,C,KC,D,KD)
 	cA = compute_coefs(KA,A)
 	cB = compute_coefs(KB,B)
@@ -83,6 +217,12 @@ function gravi_initial_input_phase(A,KA,B,KB,C,KC,D,KD)
 	cD = compute_coefs(KD,D)
     ϕ = atan.(cD.-cB,cC .-cA )
 
+	return ϕ
+end
+
+function gravi_initial_input_phase(Ichnl,K)
+	d = [compute_coefs(K[i],Ichnl[i]) for i ∈ instances(Chnl)]
+    ϕ = atan.(d[cD].-d[cB], d[cC] .- d[cA] )
 	return ϕ
 end
 
@@ -145,12 +285,55 @@ function solve_visibility(phasors::AbstractArray{T,N},KA,KB,KC,KD,A,B,C,D;
 	
 end
 
+function solve_visibility(phasors::AbstractArray{T,N}, 
+							Ichnl,
+							K) where {T,N}
+	nn = size(K[1],2)
+	nt = size(Ichnl[1],2)
+	visibilities = similar(phasors,2,nn,nt)
+	solve_visibility!(visibilities, phasors, Ichnl, K)
+	return visibilities
+end
+
+function solve_visibility!(visibilities, phasors::AbstractArray{T,N},
+							Ichnl,
+							K;
+							) where {T,N}
+	nn = size(K[1],2)
+	nt = size(Ichnl[1],2)
+	HtH = zeros(T,nn,nn,nt)
+	b = zeros(T,nn,nt)
+
+	H = [ hcat(ph[3, :] .* k, ph[4, :] .*k) for (k, ph) in zip(K, eachslice(phasors, dims=3))]
+	
+	for t ∈ axes(Ichnl[1],2)
+		HtH = zeros(T,2*nn,2*nn)
+		b = zeros(T,2*nn)
+		for (h,ich, ph) in zip(H,Ichnl, eachslice(phasors, dims=3))
+			HtH .+= h'*(ich.precision[:,t].*h)
+			Ival = ich.precision[:,t] .* (ich.val[:,t] .- ph[1,:] .- ph[2,:])
+			b .+= h'*Ival
+		end
+		F = cholesky(HtH; check=false)
+		if issuccess(F)
+			v = F \ b
+		else
+			@debug "visibilities not cholesky"
+			iHtH = pinv(HtH)
+			v = iHtH * b
+		end
+		visibilities[1,:,t] = v[1:nn]
+		visibilities[2,:,t] = v[nn+1:end]
+	end
+	return visibilities 	
+end
+
 
 function gravi_build_p2vm_interf(p2vm_data::AbstractWeightedData{T,N},
 								itrp::I, 
 								profiles,
 								lamp;
-								loop=1 ,
+								loop=5 ,
 								specres = 500,
 								baselines=baselines_list,
 								ptol=1e-5,
@@ -158,14 +341,13 @@ function gravi_build_p2vm_interf(p2vm_data::AbstractWeightedData{T,N},
 								rgl_vis=T(1000),
 								kwds...) where {T,N, I<:Interpolator}
 
-	baseline_phasors = Vector{Array{T,3}}(undef,6)
 	baseline_visibilities = Vector{Array{T,3}}(undef,6)
 	baseline_phasors =  [Vector{InterpolatedSpectrum{Complex{T},I}}(undef,4) for _∈1:6]
 	λ = itrp.knots
 	Threads.@threads for (i,baseline) ∈ collect(enumerate(baselines))
 		T1,T2 = baseline
-		#phi_sign = T1 > T2 ? -1 : 1
-		phi_sign = 1
+		phi_sign = T1 > T2 ? -1 : 1
+		#phi_sign = 1
 		A = gravi_extract_channel(p2vm_data,profiles["$T1$T2-A-C"],lamp)
 		B = gravi_extract_channel(p2vm_data,profiles["$T1$T2-B-C"],lamp)
 		C = gravi_extract_channel(p2vm_data,profiles["$T1$T2-C-C"],lamp)
@@ -187,11 +369,63 @@ function gravi_build_p2vm_interf(p2vm_data::AbstractWeightedData{T,N},
 			visibilities = solve_visibility(phasors,KA,KB,KC,KD,A,B,C,D;rgl_vis=rgl_vis)
 			sum(abs2,filter(isfinite,(visibilities.-prev))) < ptol && break
 		end
+		gravi_build_ABCD_phasors!(phasors,visibilities,A,KA,B,KB,C,KC,D,KD;rgl_phasor=0)
+
 		#baseline_phasors[i] = phasors
 		baseline_visibilities[i] = visibilities
 		for ch in instances(Chnl)
 			baseline_phasors[i][ch] = InterpolatedSpectrum(complex.(phasors[1,:,ch], phasors[2,:,ch]), itrp)
 		end
+	end
+	return baseline_phasors, baseline_visibilities
+end
+
+
+function gravi_build_p2vm_interf_flat(p2vm::Dict{String,W},
+								flats,
+								itrp::I, 
+								profiles,
+								lamp;
+								loop=1 ,
+								specres = 500,
+								baselines=baselines_list,
+								ptol=1e-7,
+								kwds...) where {T,N, I<:Interpolator,W<:AbstractWeightedData{T,N}}
+
+	baseline_visibilities = Vector{Array{T,3}}(undef,6)
+	baseline_phasors  = Vector{Array{T,3}}(undef,6)
+	λ = itrp.knots
+	#Threads.@threads	
+	for (i,baseline) ∈ collect(enumerate(baselines))
+		T1,T2 = baseline
+		#phi_sign = T1 > T2 ? -1 : 1
+		phi_sign = 1
+		Ichnl = [p2vm["$T1$T2-$C-C"]/lamp.(get_wavelength(profiles["$T1$T2-$C-C"];bnd=true)) for C ∈ ["A","B","C","D"]]
+		Pchnl1 = [flats["$T1-$T1$T2-$C-C"]/lamp.(get_wavelength(profiles["$T1$T2-$C-C"];bnd=true)) for C ∈ ["A","B","C","D"]]
+		Pchnl2 = [flats["$T2-$T1$T2-$C-C"]/lamp.(get_wavelength(profiles["$T1$T2-$C-C"];bnd=true)) for C ∈ ["A","B","C","D"]]
+
+		K = [build_interpolation_matrix(itrp,get_wavelength(profiles["$T1$T2-$C-C"];bnd=true)) for C ∈ ["A","B","C","D"]]
+
+		ϕ = gravi_initial_input_phase(Ichnl,K)
+		phasors= gravi_build_ABCD_phasors(ϕ,Ichnl,Pchnl1,Pchnl2,K)
+		visibilities = solve_visibility(phasors,Ichnl,K)
+		gravi_update_visibilities!(visibilities,λ;specres= specres, phi_sign=phi_sign)
+		for _ ∈ 2:loop 
+			
+			
+			gravi_build_ABCD_phasors!(phasors, visibilities,Ichnl,Pchnl1,Pchnl2,K)
+			visibilities = solve_visibility(phasors,Ichnl,K)
+			prev = copy(visibilities)
+			gravi_update_visibilities!(visibilities,λ;specres= specres, phi_sign=phi_sign)
+
+			#@show baseline, sum(abs2,filter(isfinite,(visibilities.-prev)))
+			sum(abs2,filter(isfinite,(visibilities.-prev))) < ptol &&  break
+		end
+		visibilities = solve_visibility(phasors,Ichnl,K)
+		#gravi_build_ABCD_phasors!(phasors,visibilities,Ichnl,Pchnl1,Pchnl2,K)
+
+ 		baseline_phasors[i] = phasors
+		baseline_visibilities[i]  = visibilities
 	end
 	return baseline_phasors, baseline_visibilities
 end
@@ -302,6 +536,25 @@ function gravi_build_V2PM(profiles::AbstractDict,
 	gravi_build_V2PM(profiles, baseline_phasors, closure_correction, λsampling,usable_wvlngth,baselines,kernel)
 end
 
+
+function gravi_build_V2PM(profiles::AbstractDict,
+							baseline_phasors::Vector{Array{T, 3}}; 
+									closure_correction::Tc=nothing,
+									baselines::Vector{Vector{Int64}}=baselines_list,
+									λsampling=nothing,
+									λmin=0.0,λmax=1.0,
+									kernel = CatmullRomSpline{Float64}()) where {T,Tc<:Union{Nothing,Vector{Vector{Complex{T}}}}}
+	
+	lk = length(kernel) 
+	if isnothing(λsampling)
+		λsampling =  build_wavelength_range(profiles;  padding=lk,λmin=λmin,λmax=λmax)
+	end		
+	λmin = max(minimum(λsampling),λmin)
+	λmax = min(maximum(λsampling),λmax)
+	usable_wvlngth = get_selected_wavelenght(profiles,baselines=baselines,λmin=λmin,λmax=λmax)
+	gravi_build_V2PM(profiles, baseline_phasors, closure_correction, λsampling,usable_wvlngth,baselines,kernel)
+end
+
 function gravi_build_V2PM(	profiles::AbstractDict,
 									baseline_phasors::Vector{Vector{InterpolatedSpectrum{Complex{T},B}}},
 									closure_correction,
@@ -342,9 +595,9 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 				off::Int = round(Int,offweights[1]) +1# + 1 a verifier
 				mx = off + lk
 				wsz::Int = lk
-				if off < 0 
-					weights = weights[(1 - off):end]
-					off = 0			
+				if off <= 0 
+					weights = weights[(2 - off):end]
+					off = 1			
 					weights = (sw=sum(weights))==0 ? weights : weights./sw
 					wsz = length(weights)
 				elseif (off+lk) > (nλ)
@@ -365,12 +618,12 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 				# Interferometry
 				trans =  weights.*sqrt(trans1*trans2) 
 				#Real
-				V[c:(c+wsz-1)] .= real(coherence) .* trans 
+				V[c:(c+wsz-1)] .= real.(coherence) .* trans 
 				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ 4 .+ (i-1)*(2) .+ 1
 				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
 				c = c+wsz
 				#Im
-				V[c:(c+wsz-1)] .= imag(coherence) .* trans 
+				V[c:(c+wsz-1)] .= imag.(coherence) .* trans 
 				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ 4 .+ (i-1)*(2) .+ 2
 				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
 				c = c+wsz
@@ -407,6 +660,96 @@ function gravi_build_V2PM(	profiles::AbstractDict,
 	return sparse(L[1:c-1],C[1:c-1],V[1:c-1],nL,nC),λsampling,usable_wvlngth
 end
 
+function gravi_build_V2PM(profiles::AbstractDict,
+		baseline_phasors::Vector{Array{T, 3}},
+									closure_correction,
+									λsampling,
+									usable_wvlngth,
+									baselines,
+									kernel) where {T}
+	
+	lk = length(kernel) 
+	nλ = length(λsampling)
+
+	
+	nmeasuredλ = maximum(maximum(diff(w,dims=1)) for w ∈ usable_wvlngth) +1				
+
+	nL = 4*6*nmeasuredλ
+	nC = (4+6*2)*nλ
+	nelement = 4*6*(2*6+2)*nmeasuredλ+(4*6*2)*nmeasuredλ*(lk-1)
+	L = zeros(Int,nelement)
+	C = zeros(Int,nelement)
+	V = zeros(T,nelement)
+	c = 1
+
+	for (i,baseline) ∈ enumerate(baselines)
+		T1,T2 = baseline
+		for  (ci,chnl) ∈ enumerate(["A","B","C","D"])
+			wvlngth = get_wavelength(profiles["$T1$T2-$chnl-C"]; bnd=true)
+			(mnw,mxw) =usable_wvlngth[i][:,ci]
+			for (j,idx) ∈ enumerate(mnw:mxw)
+				λ =  wvlngth[idx]
+				isfinite(λ) || continue
+				λidx = 	Float64.(find_index(λsampling,λ))
+				λidx > 1 || continue
+				# weights
+				offweights = InterpolationKernels.compute_offset_and_weights(kernel, λidx)
+				weights = vcat(offweights[2]...)
+				off::Int = round(Int,offweights[1]) +1# + 1 a verifier
+				mx = off + lk
+				wsz::Int = lk
+				if off <= 0 
+					weights = weights[(2 - off):end]
+					off = 1			
+					weights = (sw=sum(weights))==0 ? weights : weights./sw
+					wsz = length(weights)
+				elseif (off+lk) > (nλ)
+					mx = min(off + lk, nλ )
+					weights = weights[1:(mx-off)] 
+					weights = (sw=sum(weights))==0 ? weights : weights./sw
+					wsz = length(weights)
+				end
+
+				if isnothing(closure_correction)
+					Recoherence = baseline_phasors[i][3,idx,ci]
+					Imcoherence = baseline_phasors[i][4,idx,ci]
+				else
+					coherence = complex.(baseline_phasors[i][3,idx,ci],baseline_phasors[i][4,idx,ci]) .* closure_correction[i][off:(off+wsz-1)]
+					Recoherence = real.(coherence)
+					Imcoherence = imag.(coherence)
+#					Recoherence = baseline_phasors[i][3,idx,ci] .* real.(closure_correction[i][off:(off+wsz-1)])
+#					Imcoherence = baseline_phasors[i][4,idx,ci] .* imag.(closure_correction[i][off:(off+wsz-1)])
+				end
+				# Interferometry
+				#trans =  weights.*sqrt(trans1*trans2) 
+				#Real
+				V[c:(c+wsz-1)] .= weights.*Recoherence
+				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ 4 .+ (i-1)*(2) .+ 1
+				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
+				c = c+wsz
+				#Im
+				V[c:(c+wsz-1)] .= weights.*Imcoherence 
+				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ 4 .+ (i-1)*(2) .+ 2
+				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
+				c = c+wsz
+				# photometry
+				#off,weights = InterpolationKernels.compute_offset_and_weights(kernel, λidx)
+			
+				V[c:(c+wsz-1)] .= weights .*baseline_phasors[i][1,idx,ci]
+				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ T1
+				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
+				c = c+wsz
+
+				V[c:(c+wsz-1)] .= weights .*baseline_phasors[i][2,idx,ci]
+				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ T2
+				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
+				c = c+wsz
+			end 
+		end
+	end
+	return sparse(L[1:c-1],C[1:c-1],V[1:c-1],nL,nC),λsampling,usable_wvlngth
+end
+
 
 function  get_correlatedflux(V2PM::AbstractMatrix{T},	
 								data::AbstractWeightedData{T,2};
@@ -422,9 +765,22 @@ function  get_correlatedflux(V2PM::AbstractMatrix{T},
 	return output
 end
 
-function solveV2PM(V2PM, 
+function solveV2PM_reg(V2PM::AbstractMatrix{T}, 
 					(;val, precision)::AbstractWeightedData;
-					maxeval=500) 
+					maxeval=500,
+					rgl=1e-3) where T
+
+ 	function f(x)
+       return sum(precision.*(V2PM*x .- val).^2) + rgl*sum(abs2, x[17:end] .- x[1:end-16])
+	end
+	x0 = V2PM'*val
+	return vmlmb(f,  x0 ;autodiff=true, maxeval=maxeval)
+end
+
+
+function solveV2PM(V2PM::AbstractMatrix{T}, 
+					(;val, precision)::AbstractWeightedData;
+					maxeval=500) where T
 
  	function fg!(x,g)
        r =(V2PM*x .- val)
@@ -572,11 +928,12 @@ end
 
 
 function mean_opd_create(visibilities::AbstractArray{T,3}, λ; kwds...) where T
-	ϕ = atan.(visibilities[:,2,:],visibilities[:,1,:])
-	r = sqrt.(abs2.(visibilities[:,1,:]).+abs2.(visibilities[:,2,:]))
-	lmin = maximum(mapslices(s->findfirst(x->  0.9 .< x .< 1.1,s),r,dims=1))
-	lmax = minimum(mapslices(s->findlast(x->  0.9 .< x .< 1.1,s),r,dims=1))
-	mean_opd_create(ϕ,λ; lmin=lmin, lmax=lmax,kwds...)
+	ϕ = atan.(visibilities[2,:,:],visibilities[1,:,:])
+	r = sqrt.(abs2.(visibilities[1,:,:]).+abs2.(visibilities[2,:,:]))
+#	lmin = maximum(mapslices(s->findfirst(x->  0.9 .< x .< 1.1,s),r,dims=1))
+#	lmax = minimum(mapslices(s->findlast(x->  0.9 .< x .< 1.1,s),r,dims=1))
+#	mean_opd_create(ϕ,λ; lmin=lmin, lmax=lmax,kwds...)
+	mean_opd_create(ϕ,λ)
 end
 
 
@@ -685,7 +1042,172 @@ function gravi_update_visibilities!(visibilities,λ; phi_sign = 1, specres=500, 
 	opd = mean_opd_create(visibilities, λ; phi_sign= phi_sign)
 	envellope = gravi_compute_envelope(opd,λ,specres)
 	ϕ = opd' .* (2π ./ λ)
-	visibilities[:,1,:] .= envellope .* cos.(ϕ)
-	visibilities[:,2,:] .= envellope .* sin.(ϕ)
+	#visibilities[:,1,:] .= envellope .* cos.(ϕ)
+	#visibilities[:,2,:] .= envellope .* sin.(ϕ)
+	visibilities[1,:,:] .= envellope .* cos.(ϕ)
+	visibilities[2,:,:] .= envellope .* sin.(ϕ)
 
+end
+
+function gravi_array_get_group_delay_loop(input, sigma; max_width=2e-3)
+	#visdata = input
+	visdata = copy(input)
+	current_max = -1.0
+
+	nsigma = length(sigma)
+	lbd = 1.0 / sigma[Int(nsigma/2)]
+	ds = (sigma[end] - sigma[1])/(length(sigma) -1)
+
+	coherence = 0.5*length(sigma)/abs(sigma[1] - sigma[end])
+
+    # We never explore more than max_width
+    width1 = min(coherence, max_width)
+    step1 = 2.0 * lbd
+    nstep1 = round(Int,width1 / step1)
+
+    # Second pass
+    width2 = 3.0 * step1
+    step2 = 0.1 * lbd
+    nstep2 = round(Int,width2 / step2)
+
+    # Third pass
+    width3 = 3.0 * step2
+    step3 = 0.01 * lbd
+    nstep3 = round(Int,width3 / step3)
+
+
+	waveform1 = ComplexF64[0.0 + 0.0im for _ in 1:(nstep1+2) * nsigma]
+	waveform2 = ComplexF64[0.0 + 0.0im for _ in 1:(nstep2+2) * nsigma]
+	waveform3 = ComplexF64[0.0 + 0.0im for _ in 1:(nstep3+2) * nsigma]
+	
+	gd0 = gd1=gd2=gd3=0.
+
+	
+	is = visdata[2:end,:] .* conj.(visdata[1:end-1,:]) ./ max.(1e-15,  abs.(visdata[2:end,:]) .* abs.(visdata[1:end-1,:]))
+	gd0 = angle.(sum(is)) ./ ds ./ (2π)
+	@. visdata *= exp(-2im * π * gd0 *sigma)
+
+	# First pass to refine group delay (coarse search)
+	current_max = -1.0
+	s = 1
+	for x in -width1/2:step1:width1/2
+		tmp = 0.0 + 0.0im
+		for w in 1:nsigma
+			tmp += visdata[w] * waveform1[s]
+			s += 1
+		end
+		P = abs(tmp)
+		if P > current_max
+			current_max = P
+			gd1 = x
+		end
+	end
+
+	@. visdata *= exp(-2im * π * gd1 *sigma)
+
+
+
+	# Second pass (finer search)
+	current_max = -1.0
+	s = 1
+	for x in -width2/2:step2:width2/2
+		tmp = 0.0 + 0.0im
+		for w in 1:nsigma
+			tmp += visdata[w] * waveform2[s]
+			s += 1
+		end
+		P = abs(tmp)
+		if P > current_max
+			current_max = P
+			gd2 = x
+		end
+	end
+	@. visdata *= exp(-2im * π * gd2 *sigma)
+
+
+	# Third pass (fine search)
+	current_max = -1.0
+	s = 1
+	for x in -width3/2:step3:width3/2
+		tmp = 0.0 + 0.0im
+		for w in 1:nsigma
+			tmp += visdata[w] * waveform3[s]
+			s += 1
+		end
+		P = abs(tmp)
+		if P > current_max
+			current_max = P
+			gd3 = x
+		end
+	end
+	@. visdata *= exp(-2im * π * gd3 *sigma)
+
+	# Store the computed group delay
+	gd = gd0 + gd1 + gd2 + gd3
+
+	return gd
+end
+
+
+function groupdelay_compensate!(visdata,sigma)
+	ds = (sigma[end] - sigma[1])/(length(sigma) -1)
+	is = visdata[2:end,:] .* conj.(visdata[1:end-1,:]) ./ max.(1e-15,  abs.(visdata[2:end,:]) .* abs.(visdata[1:end-1,:]))
+	gd0 = angle.(sum(is,dims=1)) ./ ds ./ (2π)
+	visdata .*= exp.(-2im .* π.*gd0.*sigma)
+	return gd0
+end
+
+function gravi_p2vm_phase_correction(visdata::Vector{A}, λ ;baselines=baselines_list) where {T,A<:Matrix{Complex{T}}}
+	opl = Vector{Vector{T}}(undef,4)
+
+	Nλ = length(λ)
+	nλ0 = Nλ÷2
+	λ0 =  λ[nλ0]
+
+	Nrow = size(visdata[1],2)
+	# Compute OPLs
+	opl = Vector{Vector{T}}(undef, 4)
+	opl[1] = zeros(T,Nrow)
+	for t ∈ 2:4
+		opl[t] = angle.(visdata[t][nλ0,:])
+	end
+
+	# Unwrap OPLs and Remove mean
+	for t ∈ 2:4
+		unwrap!(opl[t])
+		opl[t] .-= mean(opl[t])
+	end
+	
+	# Coherent integration of visdata for each baseline
+	tmpλ = λ0  ./ λ
+	visphase = Vector{Vector{Complex{T}}}(undef,6)
+	for (i,(base,data)) ∈ enumerate(zip(baselines,visdata))
+		x = opl[base[1]] .- opl[base[2]]
+		visphase[i] = sum( (@. data * exp(-1im * x' * tmpλ)), dims=2)[:]
+		# Normalize visphase (if needed)
+		# gravi_array_normalize_complex(visphase[base + (pol - 1) * 6])
+	end
+
+	 return visphase
+end
+
+function compute_opl(visdata::Vector{A}, nλ0) where {T,A<:Matrix{Complex{T}}}
+
+	# Compute OPLs
+	opl = Vector{Vector{T}}(undef, 6)
+	for t ∈ 1:6
+		opl[t] = angle.(visdata[t][nλ0,:])
+		unwrap!(opl[t])
+		opl[t] .-= mean(opl[t])
+	end
+
+	return opl
+end
+
+function compute_group_delay(visdata::Vector{A}; lmin=1,lmax=size(visdata[1],1),phi_sign=1) where {T,A<:Matrix{Complex{T}}}
+	gd = Vector{Vector{T}}(undef, 6)
+	for t ∈ 1:6
+		gd[t] = angle.(mean(visdata[t][lmin+1:lmax,:].* conj.( visdata[t][lmin:lmax-1,:]),dims=1))[:]
+	end
+	return gd
 end
