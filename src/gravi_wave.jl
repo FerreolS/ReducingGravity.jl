@@ -63,14 +63,14 @@ function add_spectral_law(s::SpectrumModel,λcoefs)
 	P = (λ).^(0:(σdeg-1))'
 	sgm = get_width(s)
 	new_σ = inv(P'*P)*P'* sgm
-	return SpectrumModel(new_center,new_σ,λcoefs,[0.,+Inf],Vector{InterpolatedSpectrum{Nothing,Nothing}}(),s.flat,s.bbox)
+	return SpectrumModel(new_center,new_σ,λcoefs,[0.,+Inf],Vector{InterpolatedSpectrum{Nothing,Nothing}}(),s.bbox)
 end
 
 
 
 function gravi_spectral_calibration_pipeline(wavefits::FitsFile,
-						profiles::Dict{String,SpectrumModel{A,B, C,D, E}}; 
-                                          ) where {A,B,C,D,E}
+						profiles::Dict{String,SpectrumModel{A,B, C, E}}; 
+                                          ) where {A,B,C,E}
        endswith(wavefits[1]["PIPEFILE"].string,"_wave.fits") || error("must be _wave.fits file")
 
        WAVE_DATA_SC = wavefits["WAVE_DATA_SC"]
@@ -82,7 +82,7 @@ function gravi_spectral_calibration_pipeline(wavefits::FitsFile,
        regname = IMAGING_DETECTOR_SC["REGNAME"]
        region = IMAGING_DETECTOR_SC["REGION"]
 
-       new_profiles = Dict{String,SpectrumModel{A,Vector{Float64}, C,D,E}}()
+       new_profiles = Dict{String,SpectrumModel{A,Vector{Float64}, C,E}}()
 
        nλ = size(first(values(profiles)).bbox,1)
        for (reg,name) ∈ zip(region,regname)

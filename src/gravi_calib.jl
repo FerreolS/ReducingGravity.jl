@@ -2,14 +2,14 @@
 
 
 function gravi_compute_wavelength_bounds(spectra::Dict{String, ConcreteWeightedData{T,N}},
-	profiles::Dict{String,SpectrumModel{A,B,C,D,E}},
+	profiles::Dict{String,SpectrumModel{A,B,C,E}},
 	thrs=0.01,
-	kwds...) where {T,N,A,B,C,D,E} 
+	kwds...) where {T,N,A,B,C,E} 
 	
 	if all(isfinite,[p.λbnd[2] for (_,p) ∈ profiles])
 		return profiles,spectra
 	end
-	pr_array = Vector{Pair{String,SpectrumModel{A,B,C,D,E}}}(undef,length(profiles))
+	pr_array = Vector{Pair{String,SpectrumModel{A,B,C,E}}}(undef,length(profiles))
 	spectra_array = Vector{Pair{String,ConcreteWeightedData{T,N}}}(undef,length(spectra))
 	Threads.@threads for (i,(key,profile)) ∈ collect(enumerate(profiles) )
 		tel1 = key[1] 
@@ -37,8 +37,8 @@ function gravi_compute_wavelength_bounds(spectra::Dict{String, ConcreteWeightedD
 end
 
 
-function reset_wavelength_bounds!(profiles::Dict{String,SpectrumModel{A,B,C,D,E}},λmin, λmax) where {A,B,C,D,E} 
-	pr_array = Vector{Pair{String,SpectrumModel{A,B,C,D,E}}}(undef,length(profiles))
+function reset_wavelength_bounds!(profiles::Dict{String,SpectrumModel{A,B,C,E}},λmin, λmax) where {A,B,C,E} 
+	pr_array = Vector{Pair{String,SpectrumModel{A,B,C,E}}}(undef,length(profiles))
 
 	for (i,(key,profile)) ∈ enumerate(profiles)
 		@reset profile.λbnd = [λmin, λmax]
@@ -48,15 +48,12 @@ end
 
 
 function gravi_compute_transmissions(  spectra::Dict{String, ConcreteWeightedData{T,N}},
-										profiles::Dict{String,SpectrumModel{A,B,C,D,T}},
+										profiles::Dict{String,SpectrumModel{A,B,C,T}},
 										lamp;
 										thrs=0.01,
-										kwds...) where {T,N,A,B,C<:Interpolator,D} 
-	if (D <: Number) 
-		pr_array = Vector{Pair{String,SpectrumModel{A,B,C,Vector{T},T}}}(undef,length(profiles))
-	else
-		pr_array = Vector{Pair{String,SpectrumModel{A,B,C,D,T}}}(undef,length(profiles))
-	end		
+										kwds...) where {T,N,A,B,C<:Interpolator} 
+		pr_array = Vector{Pair{String,SpectrumModel{A,B,C,T}}}(undef,length(profiles))
+			
 	Threads.@threads for (i,(key,profile)) ∈ collect(enumerate(profiles) )
 		tel1 = key[1] 
 		tel2 = key[2]
@@ -75,10 +72,6 @@ function gravi_compute_transmissions(  spectra::Dict{String, ConcreteWeightedDat
 						gravi_fit_transmission( view(spectra[key2], good),lmp,BSp2, wvgood; kwds...)]
 		@reset profile.transmissions = transmissions
 
-		#flat = ones(T,length(spectra[key1]))
-		flat  = ((view(spectra[key1],good) / (profile.transmissions[1].(wvgood).* lmp) + view(spectra[key2],good) / (profile.transmissions[2].(wvgood).* lmp))/2).val
-		flat[flat.==0] .= 1
-		@reset profile.flat = flat
 		pr_array[i] = key=>profile
 	end
 	profiles = Dict(pr_array)
@@ -87,12 +80,12 @@ function gravi_compute_transmissions(  spectra::Dict{String, ConcreteWeightedDat
 
 end
 
-function gravi_init_transmissions(profiles::Dict{String,SpectrumModel{A,B,C,D,E}};
+function gravi_init_transmissions(profiles::Dict{String,SpectrumModel{A,B,C,E}};
 									T=Float64,
 									nb_transmission_knts=20,
 									kernel = CatmullRomSpline{T}(),
 									kwds...
-									) where {A,B,C,D,E} 
+									) where {A,B,C,E} 
 									
 	λmin = minimum([max(p.λbnd[1],	minimum(filter(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
 	λmax = maximum([min(p.λbnd[2],	maximum(filter(!isnan,get_wavelength(p)))) for p ∈ values(profiles)])
@@ -100,7 +93,7 @@ function gravi_init_transmissions(profiles::Dict{String,SpectrumModel{A,B,C,D,E}
 
 
 
-	pr_array = Vector{Pair{String,SpectrumModel{A,B,Interpolator{typeof(knt),typeof(kernel)},D,T}}}(undef,length(profiles))
+	pr_array = Vector{Pair{String,SpectrumModel{A,B,Interpolator{typeof(knt),typeof(kernel)},T}}}(undef,length(profiles))
 	for (i,(key,profile)) ∈ collect(enumerate(profiles) )
 		λ = get_wavelength(profile)
 		λp = λ[isfinite.(λ)]
@@ -130,11 +123,11 @@ end
 
 
 function gravi_compute_lamp(spectra::Dict{String, S}, 
-							profiles::Dict{String,SpectrumModel{A,B,C,D,E}};
+							profiles::Dict{String,SpectrumModel{A,B,C,E}};
 							nb_lamp_knts=360,
 							init_lamp = nothing,
 							kernel = CatmullRomSpline{T}(),
-							kwds...) where {T,A,B,C<:Interpolator,D,S<:AbstractWeightedData{T, 1},E} 
+							kwds...) where {T,A,B,C<:Interpolator,S<:AbstractWeightedData{T, 1},E} 
 	
 	data_trans = Vector{@NamedTuple{spectrum::WeightedData{T,1,SubArray{T, 1, Vector{T}, Tuple{Vector{Int64}}, false},SubArray{T, 1, Vector{T}, Tuple{Vector{Int64}}, false}},
 									transmission::Vector{T},wavelength::B}}(undef,length(spectra))	

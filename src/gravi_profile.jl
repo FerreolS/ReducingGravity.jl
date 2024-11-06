@@ -154,7 +154,7 @@ function gravi_extract_profile(data::AbstractWeightedData{T,N},
 		end
 		wd = WeightedData(positive .* α, positive .* αprecision)
 	end
-	return wd / T.(profile.flat)
+	return wd
 end
 
 function gravi_extract_profile(	data::AbstractWeightedData{T,N},	

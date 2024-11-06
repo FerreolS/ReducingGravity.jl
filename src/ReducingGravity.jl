@@ -264,7 +264,7 @@ function gravi_compute_profile(	flats::Vector{ConcreteWeightedData{T,N}},
 								center_degree=4, 
 								σ_degree=4, 
 								thrsld=0.1) where {T,N,C,B}
-	profile = Dict{String,SpectrumModel{C,Nothing,Nothing,Float64,Nothing}}()
+	profile = Dict{String,SpectrumModel{C,Nothing,Nothing,Nothing}}()
 	Threads.@threads for tel1 ∈ 1:4
 		for tel2 ∈ 1:4
 			tel1==tel2 && continue
@@ -273,7 +273,7 @@ function gravi_compute_profile(	flats::Vector{ConcreteWeightedData{T,N}},
 				haskey(bboxes,"$tel1$tel2-$chnl-C") || continue
 				bndbx =bboxes["$tel1$tel2-$chnl-C"][2] 
  				θ = fitprofile(flatsum,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld,center_guess=bboxes["$tel1$tel2-$chnl-C"][1]  )
-				p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{InterpolatedSpectrum{Nothing,Nothing}}(),1.0,bndbx)
+				p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{InterpolatedSpectrum{Nothing,Nothing}}(),bndbx)
 				push!(profile,"$tel1$tel2-$chnl-C"=>p) 
 			end
 		end
@@ -286,24 +286,24 @@ function gravi_compute_profile(	flat::ConcreteWeightedData{T,N},
 								center_degree=4, 
 								σ_degree=4, 
 								thrsld=0.1) where {T,N,B,C}
-	profiles = Dict{String,SpectrumModel{C,Nothing,Nothing,T,Nothing}}()
+	profiles = Dict{String,SpectrumModel{C,Nothing,Nothing,Nothing}}()
 	Threads.@threads for (key, (center_guess,bndbx)) ∈ collect(bboxes)
 		θ = fitprofile(flat,bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld, center_guess=center_guess)
-		p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{InterpolatedSpectrum{Nothing,Nothing}}(),T(1.0),bndbx)
+		p = SpectrumModel(θ..., nothing, [0.,+Inf],Vector{InterpolatedSpectrum{Nothing,Nothing}}(),bndbx)
 		push!(profiles,key=>p) 
 	end
 	return profiles
 end
 
 function gravi_compute_lamp_transmissions(	spectra::Dict{String, ConcreteWeightedData{T,N}},
-										profiles::Dict{String,SpectrumModel{A,B,C,D,T2}};
+										profiles::Dict{String,SpectrumModel{A,B,C,T2}};
 										lamp = nothing,
 										loop=5,
 										nb_transmission_knts=20,
 										nb_lamp_knts=400,
 										restart=false,		
 										Chi2=  1.0,							
-										kwds...) where {T,T2,N,A,B,C,D} 
+										kwds...) where {T,T2,N,A,B,C} 
 
 	profiles,spectra = gravi_compute_wavelength_bounds(spectra,profiles)
 	if C==Nothing || restart
@@ -324,14 +324,14 @@ end
 
 function gravi_spectral_calibration(	wave::AbstractWeightedData{T, 2},
 										darkwave::AbstractWeightedData{T, 2}, 
-										profiles::Dict{String,SpectrumModel{A,B, C,D, E}}; 
+										profiles::Dict{String,SpectrumModel{A,B, C, E}}; 
 										lines=argon[:,1],
 										guess=argon[:,2],
 										λorder=3,
-										kwds...) where {A,B,C,T,D,E}
+										kwds...) where {A,B,C,T,E}
 
 	wav = gravi_extract_profile(wave - darkwave, profiles;kwds...)
-	new_profiles = Dict{String,SpectrumModel{A,Vector{Float64}, C,D,E}}()
+	new_profiles = Dict{String,SpectrumModel{A,Vector{Float64}, C,E}}()
 	Threads.@threads for tel1 ∈ 1:4
 		   for tel2 ∈ 1:4
 				  tel1==tel2 && continue
