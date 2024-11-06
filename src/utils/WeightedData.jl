@@ -40,6 +40,9 @@ Base.:/(A::AbstractWeightedData, B)  = WeightedData(A.val ./ B, B.^2 .* A.precis
 Base.:*( B, A::AbstractWeightedData)  = WeightedData(A.val .* B,  A.precision ./ B.^2 )
 Base.:*(A::AbstractWeightedData, B)  = B * A
 
+Base.real(A::AbstractWeightedData) = WeightedData(real.(A.val),real.(A.precision))
+Base.imag(A::AbstractWeightedData) = WeightedData(real.(A.val),real.(A.precision))
+
 combine(B::NTuple{N,W}) where {N,W <: AbstractWeightedData}  = combine(first(B),last(B, N-1)...)
 combine(A::AbstractWeightedData, B...)   = combine(combine(A,first(B)),last(B, length(B)-1)...)
 combine(B::AbstractArray{W}) where W <: AbstractWeightedData  = combine(first(B),last(B, length(B)-1)...)
