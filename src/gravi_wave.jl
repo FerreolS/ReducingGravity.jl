@@ -65,3 +65,40 @@ function add_spectral_law(s::SpectrumModel,λcoefs)
 	new_σ = inv(P'*P)*P'* sgm
 	return SpectrumModel(new_center,new_σ,λcoefs,[0.,+Inf],Vector{InterpolatedSpectrum{Nothing,Nothing}}(),s.flat,s.bbox)
 end
+
+
+
+function gravi_spectral_calibration_pipeline(wavefits::FitsFile,
+						profiles::Dict{String,SpectrumModel{A,B, C,D, E}}; 
+                                          ) where {A,B,C,D,E}
+       endswith(wavefits[1]["PIPEFILE"].string,"_wave.fits") || error("must be _wave.fits file")
+
+       WAVE_DATA_SC = wavefits["WAVE_DATA_SC"]
+       STARTX = WAVE_DATA_SC["ESO PRO PROFILE STARTX"].value(Int)
+       NX = WAVE_DATA_SC["ESO PRO PROFILE NX"].value(Int)
+       wavedata = read(WAVE_DATA_SC)
+
+       IMAGING_DETECTOR_SC = read(wavefits["IMAGING_DETECTOR_SC"])
+       regname = IMAGING_DETECTOR_SC["REGNAME"]
+       region = IMAGING_DETECTOR_SC["REGION"]
+
+       new_profiles = Dict{String,SpectrumModel{A,Vector{Float64}, C,D,E}}()
+
+       nλ = size(first(values(profiles)).bbox,1)
+       for (reg,name) ∈ zip(region,regname)
+              wv = Vector{Float64}(undef,nλ)
+              fill!(wv,NaN)
+              wvd = wavedata["DATA$reg"][:]
+
+              λmin = minimum(wvd)
+		λmax = maximum(wvd)
+              wv[STARTX:(STARTX+NX-1)] .= wvd
+              profile = profiles[name]
+              @reset profile.λbnd = [λmin, λmax]
+              @reset profile.λ = wv
+              push!(new_profiles,name=>profile)
+       end
+
+
+	return new_profiles
+end
