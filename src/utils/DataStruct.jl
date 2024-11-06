@@ -75,18 +75,32 @@ end
 
 get_wavelength(::SpectrumModel{A,Nothing,B,D,E},kwds...) where {A,B,D,E} = nothing
 
-function get_wavelength((;λ)::SpectrumModel,p;kwds...)
+function get_wavelength((;λ)::SpectrumModel,p::T;kwds...) where T
 	λdeg = length(λ)
- 	λp = p .^(0:(λdeg-1))'* λ
-	return λp[1]
+	if λdeg < 5
+ 		λp = p .^(0:(λdeg-1))'* λ
+		return λp[1]
+	else
+		if T <:Integer
+			return λ[p]
+		else
+			error("p must be an integer")
+
+		end
+	end
 end
 
 function get_wavelength((;λ,λbnd, bbox)::SpectrumModel; bnd=false)
 	p = bbox.indices[1]
 	λdeg = length(λ)	
-	wv = p .^(0:(λdeg-1))'* λ
+
+	if λdeg < 5 
+		wv = p .^(0:(λdeg-1))'* λ
+	else
+		wv = λ
+	end
 	if bnd
-		wv= wv[ (λbnd[1] .<= wv .<=λbnd[2])]
+			wv= wv[ (λbnd[1] .<= wv .<=λbnd[2])]
 	else
 		wv[ .!(λbnd[1] .<= wv .<=λbnd[2])] .= NaN
 	end
@@ -99,7 +113,11 @@ get_wavelength_bounds_inpixels((;bbox)::SpectrumModel{A,Nothing,C,D,E}) where {A
 function get_wavelength_bounds_inpixels((;λ,λbnd, bbox)::SpectrumModel{A,B,C,D,E}) where {A,B,C,D,E}
 	p = bbox.indices[1]
 	λdeg = length(λ)	
-	wv = p .^(0:(λdeg-1))'* λ
+	if λdeg <5
+		wv = p .^(0:(λdeg-1))'* λ
+	else
+		wv =λ
+	end
 	return findfirst(x->x>=λbnd[1],wv):findlast(x->x<=λbnd[2],wv)
 end
 
@@ -151,23 +169,8 @@ end
 (self::ProfileModel)((;center,σ)::SpectrumModel{A,Nothing,B,D,E}) where {A,B,D,E} = self(;center=center, σ=σ)
 
 function get_profile(profile::SpectrumModel) 
-	(;center,σ) = profile
-	ncenter = length(center)
-	nσ = size(σ,1)
-	ay = profile.bbox.indices[2]
-
-	degmax = max(ncenter,nσ)
-
-    λ = get_wavelength(profile; bnd=true)
-
-	u = broadcast(^,Float64.(λ),(0:(degmax-1))')
-	cy = u[:,1:ncenter]*center
-	sy = u[:,1:nσ]*σ
-	if size(σ,2)==2
-		ly = length(ay)
-		sy = sy*vcat(range(0,1,ly)',range(1,0,ly)')
-	end
-	return exp.(-1 ./ 2 .*((cy .- ay')./ sy).^2)
+		bbox = CartesianIndices((get_wavelength_bounds_inpixels(profile),profile.bbox.indices[2]))
+	return ProfileModel(bbox)(;profile.center,profile.σ)
 end
 
 
