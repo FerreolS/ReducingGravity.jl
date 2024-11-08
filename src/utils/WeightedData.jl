@@ -1,3 +1,62 @@
+"""
+	struct WeightedData{T,N,A<:AbstractArray{T,N},B<:AbstractArray{T,N}}
+
+A structure to hold weighted data, where `val` represents the values and `precision` represents the precision of those values. Both `val` and `precision` must be of the same size.
+
+# Fields
+- `val::A`: The values of the data.
+- `precision::B`: The precision of the data.
+
+# Constructors
+- `WeightedData(val::A, precision::B)`: Creates a `WeightedData` object ensuring `val` and `precision` have the same size.
+- `WeightedData(val::A, precision::Number)`: Creates a `WeightedData` object from a single value and a precision number.
+- `WeightedData((;val, precision)::WeightedData)`: Copy constructor for `WeightedData`.
+- `WeightedData((;val, precision)::WeightedData, I...)`: Creates a `WeightedData` object by indexing into `val` and `precision`.
+
+# Type Aliases
+- `AbstractWeightedData{T,N}`: Alias for `WeightedData{T,N,A,B}` where `A` and `B` are abstract arrays.
+- `ConcreteWeightedData{T,N}`: Alias for `WeightedData{T,N,Array{T,N},Array{T,N}}`.
+
+# Base Methods
+- `Base.size(A::WeightedData)`: Returns the size of `val`.
+- `Base.size(A::WeightedData, n::Int)`: Returns the size of `val` along dimension `n`.
+- `Base.length(A::WeightedData)`: Returns the product of the sizes of `val`.
+- `Base.axes(A::WeightedData, n::Int)`: Returns the axes of `val` along dimension `n`.
+- `Base.getindex(A::WeightedData, I...)`: Indexes into `val` and `precision` and returns a new `WeightedData` object.
+- `Base.setindex!(A::WeightedData, (;val,precision), I)`: Sets the values and precision at the specified indices.
+- `Base.view(A::WeightedData, I...)`: Returns a view of `val` and `precision` as a new `WeightedData` object.
+
+# Arithmetic Operations
+- `Base.:+(A::AbstractWeightedData, B::AbstractWeightedData)`: Adds two `WeightedData` objects.
+- `Base.:+(A::AbstractWeightedData, B)`: Adds a scalar to `val`.
+- `Base.:-(A::AbstractWeightedData, B::AbstractWeightedData)`: Subtracts two `WeightedData` objects.
+- `Base.:-(A::AbstractWeightedData, B)`: Subtracts a scalar from `val`.
+- `Base.:/(A::AbstractWeightedData, B)`: Divides `val` by a scalar and adjusts `precision`.
+- `Base.:*(B, A::AbstractWeightedData)`: Multiplies `val` by a scalar and adjusts `precision`.
+- `Base.:*(A::AbstractWeightedData, B)`: Multiplies `val` by a scalar and adjusts `precision`.
+
+# Complex Operations
+- `Base.real(A::AbstractWeightedData)`: Returns the real part of `val` and `precision`.
+- `Base.imag(A::AbstractWeightedData)`: Returns the imaginary part of `val` and `precision`.
+
+# Combination Functions
+- `combine(B::NTuple{N,W})`: Combines multiple `WeightedData` objects.
+- `combine(A::AbstractWeightedData, B...)`: Combines multiple `WeightedData` objects.
+- `combine(B::AbstractArray{W})`: Combines an array of `WeightedData` objects.
+- `combine(A::AbstractWeightedData, B::AbstractArray{W})`: Combines a `WeightedData` object with an array of `WeightedData` objects.
+- `combine(A::AbstractWeightedData)`: Returns the `WeightedData` object itself.
+- `combine(A::AbstractWeightedData{T,N}, B::AbstractWeightedData{T,N})`: Combines two `WeightedData` objects.
+
+# Utility Functions
+- `flagbadpix!(A::WeightedData{T,N}, badpix::Union{Array{Bool, N}, BitArray{N}})`: Flags bad pixels by setting their values and precision to zero.
+- `likelihood(A::D, model::AbstractArray)`: Computes the likelihood of the model given the data.
+- `ChainRulesCore.rrule(::typeof(likelihood), A::D, model::AbstractArray)`: Defines the reverse-mode differentiation rule for `likelihood`.
+- `scaledlikelihood(A::D, model::AbstractArray{T,N})`: Computes the scaled likelihood of the model given the data.
+- `ChainRulesCore.rrule(::typeof(scaledlikelihood), A::D, model::AbstractArray)`: Defines the reverse-mode differentiation rule for `scaledlikelihood`.
+- `getamplitude(data::AbstractWeightedData, model)`: Computes the amplitude of the model given the data.
+- `ChainRulesCore.rrule(::typeof(getamplitude), data::AbstractWeightedData, model)`: Defines the reverse-mode differentiation rule for `getamplitude`.
+- `ChainRulesCore.frule(::typeof(getamplitude), data::AbstractWeightedData, model)`: Defines the forward-mode differentiation rule for `getamplitude`.
+"""
 struct WeightedData{T,N,A<:AbstractArray{T,N},B<:AbstractArray{T,N}}# <: AbstractArray{T,N}
 	val::A
 	precision::B
@@ -99,8 +158,9 @@ function ChainRulesCore.rrule( ::typeof(getamplitude),data::AbstractWeightedData
 	∂Y(_) = (NoTangent(),NoTangent(), ZeroTangent())
 	return getamplitude(data, model), ∂Y
 end
-
+#= 
 function ChainRulesCore.frule( ::typeof(getamplitude),data::AbstractWeightedData,model)
 	∂Y(_) = (NoTangent(),NoTangent(), ZeroTangent())
 	return getamplitude(data, model), ∂Y
 end
+ =#
