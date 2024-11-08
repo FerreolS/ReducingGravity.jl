@@ -1,12 +1,36 @@
+"""
+    InterpolatedSpectrum{T,B}
 
+A structure representing an interpolated spectrum.
 
+# Fields
+- `coefs::Vector{T}`: Interpolation coefficients
+- `basis::B`: Interpolation basis of type `Interpolator`
 
-
+# Description
+This structure allows representing and evaluating an interpolated spectrum from
+a set of coefficients and an interpolation basis.
+"""
 struct InterpolatedSpectrum{T,B}
-	coefs::Vector{T}
-	basis::B
+    coefs::Vector{T}
+    basis::B
 end
 
+"""
+    (self::InterpolatedSpectrum)(x::AbstractVector{T2}) where {T,B<:Interpolator,T2<:Number}
+
+Evaluates the interpolated spectrum at a vector of points.
+
+# Arguments
+- `x::AbstractVector{T2}`: Evaluation points
+
+# Returns
+- Vector of interpolated values at the given points
+
+# Notes
+- Non-finite values (NaN, Inf) in `x` are preserved in the output
+- Interpolation is performed only on finite values using the basis matrix
+"""
 function (self::InterpolatedSpectrum{T,B})(x::AbstractVector{T2}) where {T,B<:Interpolator,T2<:Number}
 	(;knots, kernel) = self.basis
 	notnan = isfinite.(x)
@@ -21,6 +45,21 @@ function (self::InterpolatedSpectrum{T,B})(x::AbstractVector{T2}) where {T,B<:In
 	end
 end
 
+"""
+    (self::InterpolatedSpectrum)(x::T2) where {T,B<:Interpolator,T2<:Number}
+
+Evaluates the interpolated spectrum at a single point.
+
+# Arguments
+- `x::T2`: Evaluation point
+
+# Returns
+- Interpolated value at the given point
+
+# Notes
+- If `x` is not finite (NaN, Inf), returns `x` converted to type `T`
+- The value of `x` is clamped to the interval defined by the basis knots
+"""
 function (self::InterpolatedSpectrum{T,B})(x::T2) where {T,B<:Interpolator,T2<:Number}
 	!isfinite(x) && return T(x) 
 	(;knots, kernel) = self.basis
