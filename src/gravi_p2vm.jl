@@ -395,8 +395,9 @@ function gravi_build_p2vm_interf_flat(p2vm::Dict{String,W},
 	baseline_visibilities = Vector{Array{T,3}}(undef,6)
 	baseline_phasors  = Vector{Array{T,3}}(undef,6)
 	λ = itrp.knots
-	#Threads.@threads	
-	for (i,baseline) ∈ collect(enumerate(baselines))
+	lmin = round(Int,length(λ)*0.1)
+	lmax = round(Int,length(λ)*0.75)
+	Threads.@threads for (i,baseline) ∈ collect(enumerate(baselines))
 		T1,T2 = baseline
 		#phi_sign = T1 > T2 ? -1 : 1
 		phi_sign = 1
@@ -409,20 +410,20 @@ function gravi_build_p2vm_interf_flat(p2vm::Dict{String,W},
 		ϕ = gravi_initial_input_phase(Ichnl,K)
 		phasors= gravi_build_ABCD_phasors(ϕ,Ichnl,Pchnl1,Pchnl2,K)
 		visibilities = solve_visibility(phasors,Ichnl,K)
-		gravi_update_visibilities!(visibilities,λ;specres= specres, phi_sign=phi_sign)
+		gravi_update_visibilities!(visibilities,λ;specres= specres, phi_sign=phi_sign,lmin=lmin,lmax=lmax)
 		for _ ∈ 2:loop 
 			
 			
 			gravi_build_ABCD_phasors!(phasors, visibilities,Ichnl,Pchnl1,Pchnl2,K)
 			visibilities = solve_visibility(phasors,Ichnl,K)
 			prev = copy(visibilities)
-			gravi_update_visibilities!(visibilities,λ;specres= specres, phi_sign=phi_sign)
+			gravi_update_visibilities!(visibilities,λ;specres= specres, phi_sign=phi_sign,lmin=lmin,lmax=lmax)
 
 			#@show baseline, sum(abs2,filter(isfinite,(visibilities.-prev)))
 			sum(abs2,filter(isfinite,(visibilities.-prev))) < ptol &&  break
 		end
-		visibilities = solve_visibility(phasors,Ichnl,K)
-		#gravi_build_ABCD_phasors!(phasors,visibilities,Ichnl,Pchnl1,Pchnl2,K)
+		#visibilities = solve_visibility(phasors,Ichnl,K)
+		gravi_build_ABCD_phasors!(phasors,visibilities,Ichnl,Pchnl1,Pchnl2,K)
 
  		baseline_phasors[i] = phasors
 		baseline_visibilities[i]  = visibilities
@@ -497,6 +498,7 @@ function make_pixels_vector(data::AbstractWeightedData{T,N},
 			end
 		end
 	end
+	
 	return WeightedData(v,w)
 end
 
@@ -735,6 +737,7 @@ function gravi_build_V2PM(profiles::AbstractDict,
 				# photometry
 				#off,weights = InterpolationKernels.compute_offset_and_weights(kernel, λidx)
 			
+
 				V[c:(c+wsz-1)] .= weights .*baseline_phasors[i][1,idx,ci]
 				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ T1
 				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
@@ -753,7 +756,8 @@ end
 
 function  get_correlatedflux(V2PM::AbstractMatrix{T},	
 								data::AbstractWeightedData{T,2};
-								maxeval=500,atol=1e-3) where {T}
+								maxeval=500,
+								atol=1e-3) where {T}
 		
 	nframe = size(data,2)
 	nrow = size(V2PM,2) ÷ (6*2+4)
@@ -769,9 +773,9 @@ function solveV2PM_reg(V2PM::AbstractMatrix{T},
 					(;val, precision)::AbstractWeightedData;
 					maxeval=500,
 					rgl=1e-3) where T
-
+	μ = maximum(precision) .* maximum(abs2,extrema(V2PM)) .* rgl
  	function f(x)
-       return sum(precision.*(V2PM*x .- val).^2) + rgl*sum(abs2, x[17:end] .- x[1:end-16])
+       return sum(precision.*(V2PM*x .- val).^2) + μ.*sum(abs2, x[17:end] .- x[1:end-16])
 	end
 	x0 = V2PM'*val
 	return vmlmb(f,  x0 ;autodiff=true, maxeval=maxeval)
@@ -933,17 +937,17 @@ function mean_opd_create(visibilities::AbstractArray{T,3}, λ; kwds...) where T
 #	lmin = maximum(mapslices(s->findfirst(x->  0.9 .< x .< 1.1,s),r,dims=1))
 #	lmax = minimum(mapslices(s->findlast(x->  0.9 .< x .< 1.1,s),r,dims=1))
 #	mean_opd_create(ϕ,λ; lmin=lmin, lmax=lmax,kwds...)
-	mean_opd_create(ϕ,λ)
+	mean_opd_create(ϕ,λ;kwds...)
 end
 
 
 function mean_opd_create(ϕ::AbstractArray{T,2}, λ; lmin=1,lmax=size(ϕ,1),phi_sign=1) where T
-	opd, gd = compute_opd_gd(ϕ[lmin:lmax,:], λ)
+	opd, gd = compute_opd_gd(ϕ, λ; lmin=lmin,lmax=lmax,phi_sign=phi_sign)
 	#opd = phi_sign .*  mean((T.(λ ./(2π)) .* ϕ)[lmin:lmax,:],dims=1)[:]
 	#gd = angle.(mean(exp.(1im .* diff(ϕ[lmin:lmax,:],dims=1)),dims=1))[:]
 	intercept, _ =  affine_solve(opd,gd)
 	opd .-= intercept
-	return opd #, gd
+	return opd , gd
 end
 
 function mean_opd_create(A::AbstractArray{Complex{T},2}, λ; kwds...) where {T}
@@ -957,9 +961,10 @@ function compute_opd_gd(A::AbstractArray{Complex{T},2}, λ; kwds...) where {T}
 	compute_opd_gd(ϕ,λ; kwds...)
 end
 
-function compute_opd_gd(ϕ::AbstractArray{T,2}, λ; lmin=1,lmax=size(ϕ,1)) where T<:AbstractFloat
+function compute_opd_gd(ϕ::AbstractArray{T,2}, λ; lmin=1,lmax=size(ϕ,1),phi_sign=1) where T<:AbstractFloat
 	unwrap!(ϕ,dims=2)
 	N = size(ϕ,2)
+	size(ϕ,1) == length(λ) || throw(DimensionMismatch("The number of lines of ϕ must be equal to the length of λ"))
 	w = T(2π) ./λ[lmin:lmax]
 	w0 = mean(w)
 	w .-= w0
@@ -968,7 +973,7 @@ function compute_opd_gd(ϕ::AbstractArray{T,2}, λ; lmin=1,lmax=size(ϕ,1)) wher
 	@inbounds @simd for n ∈ 1:N
 		 intercept, slope = affine_solve(ϕ[lmin:lmax,n],w)
 		gd[n] = slope
-		opd[n] = intercept ./ w0 
+		opd[n] = phi_sign .* intercept ./ w0 
 	end
 	return opd, gd
 end
@@ -1038,8 +1043,9 @@ function unwrap!(ϕ::AbstractMatrix{T}; period = 2π,dims=1) where T
 	end
 end
 
-function gravi_update_visibilities!(visibilities,λ; phi_sign = 1, specres=500, )
-	opd = mean_opd_create(visibilities, λ; phi_sign= phi_sign)
+function gravi_update_visibilities!(visibilities,λ; phi_sign = 1, specres=500,lmin=1,lmax=size(visibilities,2)) 
+	
+	opd, gd= mean_opd_create(visibilities, λ; phi_sign= phi_sign, lmin=lmin,lmax=lmax)
 	envellope = gravi_compute_envelope(opd,λ,specres)
 	ϕ = opd' .* (2π ./ λ)
 	#visibilities[:,1,:] .= envellope .* cos.(ϕ)
