@@ -380,7 +380,6 @@ function gravi_build_p2vm_interf(p2vm_data::AbstractWeightedData{T,N},
 	return baseline_phasors, baseline_visibilities
 end
 
-
 function gravi_build_p2vm_interf_flat(p2vm::Dict{String,W},
 								flats,
 								itrp::I, 
@@ -515,6 +514,88 @@ function extract_correlated_flux(x::AbstractArray{T,N};
 		interferometric[i] = (x[4+2*(i-1)+1,..] .+ 1im .* x[4+2*(i-1)+2,..]) 
 	end
 	return photometric,interferometric
+end
+
+function buildback_correlated_flux(photometric::Vector{Array{T,N}},
+								interferometric::Vector{Array{Complex{T},N}};
+								baselines=baselines_list) where {T,N}
+	if N==1
+		nl = size(photometric[1],1)
+		nf = 1
+	else			
+		nl, nf = size(photometric[1])
+	end
+	corrflux =  Array{T,3}(undef,6*2+4,nl,nf)
+	
+	for i ∈ axes(photometric,1)
+		corrflux[i,..] .= photometric[i,..]
+	end
+	for (i,_) ∈ enumerate(baselines)
+		corrflux[4+2*(i-1)+1,..] .= real.(interferometric[i,..])
+		corrflux[4+2*(i-1)+2,..] .= imag.(interferometric[i,..])
+	end
+	return corrflux
+end
+
+
+
+function make_closure_correction(clcorr::Vector{Vector{Complex{T}}}; 
+								conj = false,
+								baselines=baselines_list) where {T}
+
+	nl = size(clcorr[1],1)
+
+	nelement = (6*4+4)*nl
+	L = zeros(Int,nelement)
+	C = zeros(Int,nelement)
+	V = zeros(T,nelement)
+	c = 1
+
+	for j ∈ 1:nl
+		jidx= (j-1)*16 
+		L[c] = jidx + 1
+		C[c] = jidx + 1
+		V[c] = 1
+		c += 1
+		L[c] = jidx + 2
+		C[c] = jidx + 2
+		V[c] = 1
+		c += 1
+		L[c] = jidx + 3
+		C[c] = jidx + 3
+		V[c] = 1
+		c += 1
+		L[c] = jidx + 4
+		C[c] = jidx + 4
+		V[c] = 1
+		c += 1
+		for (i,baseline) ∈ enumerate(baselines)
+
+
+			sinϕ = imag(clcorr[i][j])
+			cosϕ = real(clcorr[i][j])
+
+			L[c] = jidx + 4+2*(i-1)+1
+			C[c] = jidx + 4+2*(i-1)+1
+			V[c] = cosϕ
+			c += 1
+			L[c] = jidx + 4+2*(i-1)+2
+			C[c] = jidx + 4+2*(i-1)+2
+			V[c] = cosϕ
+			c += 1
+			L[c] = jidx + 4+2*(i-1)+1
+			C[c] = jidx + 4+2*(i-1)+2
+			V[c] = conj ? -sinϕ : sinϕ
+			c += 1
+			L[c] = jidx + 4+2*(i-1)+2
+			C[c] = jidx + 4+2*(i-1)+1
+			V[c] = conj ? sinϕ : -sinϕ
+			c += 1
+			
+		end
+	end
+
+	return sparse(L[1:c-1],C[1:c-1],V[1:c-1],(6*2+4)*nl,(6*2+4)*nl)
 end
 
 
@@ -754,7 +835,7 @@ function gravi_build_V2PM(profiles::AbstractDict,
 end
 
 
-function  get_correlatedflux(V2PM::AbstractMatrix{T},	
+function  get_correlatedflux(	V2PM::AbstractMatrix{T},	
 								data::AbstractWeightedData{T,2};
 								maxeval=500,
 								atol=1e-3) where {T}
@@ -764,6 +845,7 @@ function  get_correlatedflux(V2PM::AbstractMatrix{T},
 	output = zeros(T,6*2+4,nrow,nframe)
 	Threads.@threads for t ∈ 1:nframe
 		x = solveV2PM(V2PM, view(data,:,t),maxeval=maxeval)
+		#x = solveV2PM_reg(V2PM, view(data,:,t),maxeval=maxeval)
 		view(output,:,:,t)[:] .= x[:]
 	end
 	return output
@@ -966,14 +1048,17 @@ function compute_opd_gd(ϕ::AbstractArray{T,2}, λ; lmin=1,lmax=size(ϕ,1),phi_s
 	N = size(ϕ,2)
 	size(ϕ,1) == length(λ) || throw(DimensionMismatch("The number of lines of ϕ must be equal to the length of λ"))
 	w = T(2π) ./λ[lmin:lmax]
-	w0 = mean(w)
+
+	#w0 = mean(w)
+	w0 =  T(2π) ./λ[(lmin+lmax)÷2]
 	w .-= w0
 	opd = Vector{T}(undef,N)
 	gd = Vector{T}(undef,N)
 	@inbounds @simd for n ∈ 1:N
-		 intercept, slope = affine_solve(ϕ[lmin:lmax,n],w)
+		intercept, slope = affine_solve(ϕ[lmin:lmax,n],w)
 		gd[n] = slope
 		opd[n] = phi_sign .* intercept ./ w0 
+		#opd[n] = (intercept .-  slope.*w0)./w0 
 	end
 	return opd, gd
 end
@@ -1009,9 +1094,43 @@ function gravi_compute_envelope(opd::AbstractVector{T}, λ) where {T}
 	return envellope
 end
 
+function gravi_compute_envelope(opd::AbstractMatrix{T}, λ) where {T}
+	nλ = length(λ)
+	nt = size(opd,2)
+
+	# Compute delta_lambda and lambda from experience 
+	Δλ =  (λ[end] - λ[1])/(length(λ)-1)*3
+
+
+	coh_len = @.  T(λ^2 / Δλ)
+
+	# Gaussian enveloppe 
+	envelope = zeros(T,nλ,nt)
+	for idx ∈ CartesianIndices(envelope)
+		i, j = Tuple(idx)
+		envelope[i,j] = exp(-1*(opd[i,j]^2)/(coh_len[i]^2/2))
+	end
+	return envelope
+end
 
 
 function gravi_compute_envelope(opd::AbstractVector{T}, λ,R) where {T}
+	nλ = length(λ)
+	nt = size(opd,2)
+
+	coh_len = @. (2log(2)) / π * T(λ * R)
+
+	# Gaussian enveloppe 
+	envelope = zeros(T,nλ,nt)
+	@inbounds @simd for idx ∈ CartesianIndices(envelope)
+		i, j = Tuple(idx)
+		envelope[i,j] = exp(-1*(opd[j]^2)/(coh_len[i]^2/2))
+	end
+	return envelope
+end
+
+
+function gravi_compute_envelope2(opd::AbstractVector{T}, λ,R) where {T}
 	nλ = length(λ)
 	nt = length(opd)
 
