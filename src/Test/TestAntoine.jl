@@ -79,7 +79,12 @@ wvcorr = ReducingGravity.get_correlatedflux(S,wvsc)
 wvphotometric,wvinterferometric = ReducingGravity.extract_correlated_flux(wvcorr)
 bispectra = ReducingGravity.get_bispectrum(wvinterferometric)
 clcorr=ReducingGravity.get_closure_correction(bispectra)
-S,λ,wvidx = gravi_build_V2PM(profiles,baseline_phasors;λsampling=λ,closure_correction=clcorr)
+closure_correction = ReducingGravity.make_closure_correction(clcorr)
+S = S*closure_correction 
+wvcorr = ReducingGravity.get_correlatedflux(S,wvsc)
+wvphotometric,wvinterferometric = ReducingGravity.extract_correlated_flux(wvcorr)
+
+#S,λ,wvidx = gravi_build_V2PM(profiles,baseline_phasors;λsampling=λ,closure_correction=clcorr)
 
 fdark30 = readfits(first(filter(x -> (occursin(r"(DARK)", x.second.type) && x.second.Δt==30.0), flist)).first; ext="IMAGING_DATA_SC");
 goodpix30 = gravi_compute_badpix(fdark30,illuminated, spatialkernel=(11,1))
@@ -110,14 +115,16 @@ calpix = ReducingGravity.make_pixels_vector(calib - sky30c.val,profiles,wvidx)
 calcorr = ReducingGravity.get_correlatedflux(S,calpix)
 photometric,corrflux = ReducingGravity.extract_correlated_flux(calcorr)
 
+bispectra = ReducingGravity.get_bispectrum(corrflux)
 
 using Plots
-plot(λ,  mean(abs2.(corrflux[1] ./ sqrt.(max.(1e-2,photometric[1].*photometric[2]))),dims=2); ticks=:native, ylims=[0.,1.], label="1-2")
-plot!(λ, mean(abs2.(corrflux[2] ./ sqrt.(max.(1e-2,photometric[1].*photometric[3]))),dims=2); ticks=:native, ylims=[0.,1.], label="1-3")
-plot!(λ, mean(abs2.(corrflux[3] ./ sqrt.(max.(1e-2,photometric[1].*photometric[4]))),dims=2); ticks=:native, ylims=[0.,1.], label="1-4")
-plot!(λ, mean(abs2.(corrflux[4] ./ sqrt.(max.(1e-2,photometric[2].*photometric[3]))),dims=2); ticks=:native, ylims=[0.,1.], label="2-3")
-plot!(λ, mean(abs2.(corrflux[5] ./ sqrt.(max.(1e-2,photometric[2].*photometric[4]))),dims=2); ticks=:native, ylims=[0.,1.], label="4-2")
-plot!(λ, mean(abs2.(corrflux[6] ./ sqrt.(max.(1e-2,photometric[3].*photometric[4]))),dims=2); ticks=:native, ylims=[0.,1.], label="4-3")
+plotlyjs()
+plot!(λ,  mean(abs2.(corrflux[1] ./ sqrt.(max.(1e-2,photometric[1].*photometric[2]))),dims=2); ticks=:native, ylims=[0.,1.], label="1-2r")
+plot!(λ, mean(abs2.(corrflux[2] ./ sqrt.(max.(1e-2,photometric[1].*photometric[3]))),dims=2); ticks=:native, ylims=[0.,1.], label="1-3r")
+plot!(λ, mean(abs2.(corrflux[3] ./ sqrt.(max.(1e-2,photometric[1].*photometric[4]))),dims=2); ticks=:native, ylims=[0.,1.], label="1-4r")
+plot!(λ, mean(abs2.(corrflux[4] ./ sqrt.(max.(1e-2,photometric[2].*photometric[3]))),dims=2); ticks=:native, ylims=[0.,1.], label="2-3r")
+plot!(λ, mean(abs2.(corrflux[5] ./ sqrt.(max.(1e-2,photometric[2].*photometric[4]))),dims=2); ticks=:native, ylims=[0.,1.], label="4-2r")
+plot!(λ, mean(abs2.(corrflux[6] ./ sqrt.(max.(1e-2,photometric[3].*photometric[4]))),dims=2); ticks=:native, ylims=[0.,1.], label="4-3r")
 
 
 # plot(λ,  mean(abs2.(corrflux[1]) ./ (4 .*max.(1e-2,photometric[1].*photometric[2])),dims=2); ticks=:native, ylims=[0.,1.], label="1-2")
@@ -142,10 +149,28 @@ plot!( oiwave, mean(abs2.(oidata[:,4:6:end]) ./ (max.(1e-2,F1F2[:,4:6:end] )),di
 plot!( oiwave, mean(abs2.(oidata[:,5:6:end]) ./ (max.(1e-2,F1F2[:,5:6:end] )),dims=2); ticks=:native, ylims=[0.,1.], label="4-2-pip")
 plot!( oiwave, mean(abs2.(oidata[:,6:6:end]) ./ (max.(1e-2,F1F2[:,6:6:end] )),dims=2); ticks=:native, ylims=[0.,1.], label="4-3-pip")
 
-
+#= 
 plot( oiwave,  mean(abs.(oidata[:,1:6:end]) ./ sqrt.(max.(1e-2,F1F2[:,1:6:end] .* vfactor[:,1:6:end])),dims=2); ticks=:native, ylims=[0.,1.], label="1-2")
 plot!( oiwave, mean(abs.(oidata[:,2:6:end]) ./ sqrt.(max.(1e-2,F1F2[:,2:6:end] .* vfactor[:,2:6:end])),dims=2); ticks=:native, ylims=[0.,1.], label="1-3")
 plot!( oiwave, mean(abs.(oidata[:,3:6:end]) ./ sqrt.(max.(1e-2,F1F2[:,3:6:end] .* vfactor[:,3:6:end])),dims=2); ticks=:native, ylims=[0.,1.], label="1-4")
 plot!( oiwave, mean(abs.(oidata[:,4:6:end]) ./ sqrt.(max.(1e-2,F1F2[:,4:6:end] .* vfactor[:,4:6:end])),dims=2); ticks=:native, ylims=[0.,1.], label="2-3")
 plot!( oiwave, mean(abs.(oidata[:,5:6:end]) ./ sqrt.(max.(1e-2,F1F2[:,5:6:end] .* vfactor[:,5:6:end])),dims=2); ticks=:native, ylims=[0.,1.], label="4-2")
 plot!( oiwave, mean(abs.(oidata[:,6:6:end]) ./ sqrt.(max.(1e-2,F1F2[:,6:6:end] .* vfactor[:,6:6:end])),dims=2); ticks=:native, ylims=[0.,1.], label="4-3")
+ =#
+
+plot(λ,  .-angle.(corrflux[1][:,1] ); ticks=:native, ylims=[0.,1.], label="1-2r")
+plot!(λ, .-angle.(corrflux[2][:,1] ); ticks=:native, ylims=[0.,1.], label="1-3r")
+plot!(λ, angle.(corrflux[3][:,1] ); ticks=:native, ylims=[0.,1.], label="4-1r")
+plot!(λ, .-angle.(corrflux[4][:,1] ); ticks=:native, ylims=[0.,1.], label="2-3r")
+plot!(λ, angle.(corrflux[5][:,1] ); ticks=:native, ylims=[0.,1.], label="4-2r")
+plot!(λ, angle.(corrflux[6][:,1] ); ticks=:native, ylims=[0.,1.], label="4-3r")
+
+plot!( oiwave, angle.(oidata[:,1]); ticks=:native, ylims=[0.,1.], label="1-2-pip")
+plot!( oiwave, angle.(oidata[:,2]); ticks=:native, ylims=[0.,1.], label="1-3-pip")
+plot!( oiwave, angle.(oidata[:,3]); ticks=:native, ylims=[0.,1.], label="1-4-pip")
+plot!( oiwave, angle.(oidata[:,4]); ticks=:native, ylims=[0.,1.], label="2-3-pip")
+plot!( oiwave, angle.(oidata[:,5]); ticks=:native, ylims=[0.,1.], label="4-2-pip")
+plot!( oiwave, angle.(oidata[:,6]); ticks=:native, ylims=[0.,1.], label="4-3-pip")
+
+C = angle.(dropdims(mean(cat(bispectra...,dims=3),dims=2),dims=2))
+plot(λ, rad2deg.(C); ticks=:native,xlabel="wavelength",ylabel="Phase [deg]",title="closure phase")
