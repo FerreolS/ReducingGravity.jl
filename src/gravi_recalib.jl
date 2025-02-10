@@ -25,7 +25,7 @@ function groupdelay2OPL(gd::Vector{Vector{T}}) where T <:AbstractFloat
 					-0.25   0.0  	0.0	   	0.25    -0.25	0.0
 					0  		-0.25	0.0		-0.25	0		-0.25
 					0		0		0.25    0	   	0.25    0.25]
-	return ML*gd
+	return hcat(ML*gd...)'
 end
 
 function recompute_phasors(data, k, opd)
@@ -57,26 +57,31 @@ function recalibrate_wavenumber(data, k,	phasors, opd ; degmax=4,maxeval=500)
 	return L * vmlmb(opt_wavenumber,  ck_init ;autodiff=true, maxeval=maxeval)
 end
 
-function recalibrate(data,opl,dispmodel, profiles::AbstractDict; baselines=baselines_list, iter=1)
+function recalibrate(data,visdata,dispmodel,fλ, profiles::AbstractDict; baselines=baselines_list, iter=1)
 
 	kt = [ [1. ./ get_wavelength(profiles["$(baseline[1])$(baseline[2])-$chnl-C"];bnd=true)  for (k,chnl) ∈ enumerate(["A","B","C","D"])] for (i,baseline) ∈ enumerate(baselines)]
+	
+	_, slopes =  afine_model(visdata, fλ; lmin=20,lmax=200)
+	opl = groupdelay2OPL(slopes)
+	
 	phasorst = [ Vector{Vector{ComplexF64}}(undef,4) for _ ∈ 1:6]
 	for _ ∈ 1:iter
 		kt,phasorst = recalibrate(data,opl,dispmodel, kt, phasorst; baselines=baselines)
+		opl = estimate_opl!(data,dispmodel, kt,phasorst,opl)
 	end
-	return kt,phasorst
+	return kt,phasorst,opl
 end
 
 function recalibrate(data,opl,dispmodel, kt,phasorst; baselines=baselines_list)
-	#Threads.@threads 
-	for (i,baseline) ∈ collect(enumerate(baselines))
+	Threads.@threads for (i,baseline) ∈ collect(enumerate(baselines))
 		T1,T2 = baseline
-		#Threads.@threads
-		for (j,chnl) ∈ collect(enumerate(["A","B","C","D"]))
+		Threads.@threads for (j,chnl) ∈ collect(enumerate(["A","B","C","D"]))
 			k = kt[i][j] 
 			n1 = get_refractive_index(dispmodel[T1],k)
 			n2 = get_refractive_index(dispmodel[T2],k)
-			opd  = n1.*opl[T1]' .- n2 .* opl[T2]'
+		#	n1[:] .= 1.0
+		#	n2[:] .= 1.0
+			opd  = n1.*opl[T1,:]' .- n2 .* opl[T2,:]'
 			d = view(data,j,i,:,:)
 			phasorst[i][j] = recompute_phasors(d, k, opd)
 			kt[i][j] = recalibrate_wavenumber(d, k, phasorst[i][j], opd)
@@ -86,17 +91,16 @@ function recalibrate(data,opl,dispmodel, kt,phasorst; baselines=baselines_list)
 end
 
 function normalize_data(data, S, photometry; baselines=baselines_list)
-	nλ = size(data,3)
-	nt = size(data,4)
-	nl = size(photometry[1],1)
+	nl,nt = size(photometry[1])
+	normalized = deepcopy(WeightedData(reshape(data.val,4,6,:,nt), reshape(data.precision,4,6,:,nt)))
+	nλ = size(normalized,3)
 	SS = reshape(S,4,6,nλ,16,nl)
 
-	normalized = deepcopy(data)
 
 	for (i,baseline) ∈ collect(enumerate(baselines))
 		T1,T2 = baseline
 		for (j,chnl) ∈ collect(enumerate(["A","B","C","D"]))
-			d = view(data,j,i,:,:)
+			d = view(normalized,j,i,:,:)
 			photo1 = SS[j,i,:,T1,:]*photometry[T1]
 			photo2 = SS[j,i,:,T2,:]*photometry[T2]
 			denom = sqrt.( photo1 .* photo2)
@@ -176,4 +180,52 @@ function recompute_wavelegnth(visdata::Vector{Matrix{Complex{T}}}, λ; lmin=1,lm
 	end
 	meansc = mean(sum.((.*).([λ],finalλ)) ./ sum.((.*).(finalλ,finalλ)))
 	return meansc .* finalλ
+end
+
+function reshape_pipeline_data(oidata::Matrix{Complex{T}}; baselines=baselines_list) where T
+	output = Vector{Matrix{Complex{T}}}(undef,length(baselines))
+	for (i,baseline) ∈ collect(enumerate(baselines))
+		T1,T2 = baseline
+		if T1>T2
+			output[i] = deepcopy(oidata[:,i:6:end] )
+		else
+			output[i] = deepcopy(conj.(oidata[:,i:6:end]) )
+		end
+	end
+	return output
+end
+
+
+function build_BMatrix(dispmodel,kt,phasors;baselines=baselines_list)
+	nk = length(kt[1][1])
+	B = zeros(Float64,6*4*nk,4)
+	P = ones(ComplexF64,6*4*nk)
+	for (b,baseline) ∈ collect(enumerate(baselines))
+		T1,T2 = baseline	
+		for c ∈ 1:4
+			n1 = get_refractive_index(dispmodel[T1],kt[b][c])
+			n2 = get_refractive_index(dispmodel[T2],kt[b][c])	
+			for k ∈ 1:nk
+				B[24*(k-1) + 4*(b-1)+c,T1] = n1[k].*kt[b][c][k].*2π
+				B[24*(k-1) + 4*(b-1)+c,T2] = -1 * n2[k] * kt[b][c][k] *2π
+				P[24*(k-1) + 4*(b-1)+c] = phasors[b][c][k]			
+		   end
+	   end
+	end
+	return B, P
+end
+
+function estimate_opl!(data,dispmodel, k,phasors,opl)
+	nk = length(k[1][1])
+	B,P = build_BMatrix(dispmodel,k,phasors)
+	ndata = WeightedData(reshape(data.val,4*6*nk,:),reshape(data.precision,4*6*nk,:))
+	nt = size(ndata,2)
+	
+	function opt_opl(t,_opl)
+		likelihood(ndata[:,t], real.(P.* exp.(1im .* B*vcat(opl[1,t], _opl))))
+	end
+	Threads.@threads for t ∈ 1:nt
+		opl[2:4,t] .= vmlmb(Base.Fix1(opt_opl,t), opl[2:4,t] ;autodiff=true, maxeval=500,xtol = (0.0,1e-9),ftol = (0.0,1e-18), gtol = (0.0,1e-16))
+	end
+	return opl
 end

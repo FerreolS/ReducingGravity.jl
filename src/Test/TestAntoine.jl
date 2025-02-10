@@ -84,6 +84,11 @@ S = S*closure_correction
 wvcorr = ReducingGravity.get_correlatedflux(S,wvsc)
 wvphotometric,wvinterferometric = ReducingGravity.extract_correlated_flux(wvcorr)
 
+disp_filename = "/Users/ferreol/Code/gravity_dev/gravity-calib/GRAVI_DISP_MODEL_2019-10-17.fits"
+dispmodel=ReducingGravity.gravi_extract_disp_model(disp_filename)
+dnorm = ReducingGravity.normalize_data(wvsc,S,wvphotometric)
+fλ = ReducingGravity.recompute_wavelegnth(wvinterferometric,λ;lmin=15,lmax=200)
+nkt, phasorst,opl = ReducingGravity.recalibrate(dnorm, wvinterferometric , dispmodel, fλ, profiles; iter=4)
 #S,λ,wvidx = gravi_build_V2PM(profiles,baseline_phasors;λsampling=λ,closure_correction=clcorr)
 
 fdark30 = readfits(first(filter(x -> (occursin(r"(DARK)", x.second.type) && x.second.Δt==30.0), flist)).first; ext="IMAGING_DATA_SC");
@@ -142,7 +147,7 @@ oidata = astrored6["VISDATA"]
 F1F2 = astrored6["F1F2"]
 vfactor = astrored6["V_FACTOR"]
 
-plot!( oiwave,  mean(abs2.(oidata[:,1:6:end]) ./ (max.(1e-2,F1F2[:,1:6:end] )),dims=2); ticks=:native, ylims=[0.,1.], label="1-2-pip")
+plot( oiwave,  mean(abs2.(oidata[:,1:6:end]) ./ (max.(1e-2,F1F2[:,1:6:end] )),dims=2); ticks=:native, ylims=[0.,1.], label="1-2-pip")
 plot!( oiwave, mean(abs2.(oidata[:,2:6:end]) ./ (max.(1e-2,F1F2[:,2:6:end] )),dims=2); ticks=:native, ylims=[0.,1.], label="1-3-pip")
 plot!( oiwave, mean(abs2.(oidata[:,3:6:end]) ./ (max.(1e-2,F1F2[:,3:6:end] )),dims=2); ticks=:native, ylims=[0.,1.], label="1-4-pip")
 plot!( oiwave, mean(abs2.(oidata[:,4:6:end]) ./ (max.(1e-2,F1F2[:,4:6:end] )),dims=2); ticks=:native, ylims=[0.,1.], label="2-3-pip")
