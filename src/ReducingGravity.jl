@@ -16,7 +16,8 @@ using 	Accessors,
 		Statistics, 
 		StatsBase,
 		Tullio,
-		Zygote
+		Zygote,
+		OffsetArrays
 
 import 	ImageFiltering: mapwindow
 

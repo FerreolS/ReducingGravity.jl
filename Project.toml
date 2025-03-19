@@ -12,6 +12,7 @@ FITSHeaders = "8163a04c-c153-4fb1-a498-3402381ec208"
 ImageFiltering = "6a3955dd-da59-5b1f-98d4-e7296123deb5"
 InterpolationKernels = "16730964-a2ec-11e9-36fa-47a4f82bfac6"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+OffsetArrays = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
 Optim = "429524aa-4258-5aef-a3af-852621145aeb"
 OptimPackNextGen = "080ffe24-4a27-4ab0-ad71-7b624e73ef8d"
 Optimisers = "3bd65402-5787-11e9-1adc-39752487f4e2"
@@ -32,3 +33,4 @@ ReducingGravityPlotsExt = ["Plots"]
 [compat]
 EasyFITS = "0.6.1"
 FITSHeaders = "0.4.1"
+OffsetArrays = "1.15.0"

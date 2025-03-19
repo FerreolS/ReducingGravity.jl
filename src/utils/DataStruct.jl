@@ -219,3 +219,33 @@ end
 function get_profile(s::SpectrumModel{A,Nothing,B,E},bndbox) where {A,B,E}
 	ProfileModel(bndbox)(;s.center,s.σ)
 end
+
+
+function get_LSF_size((;bbox,center,σ,λ)::SpectrumModel)
+
+	ncenter = length(center)
+	nσ = size(σ,1)
+	valid = .!isnan.(λ)
+
+	ax = bbox.indices[1][valid]
+	ay = bbox.indices[2]
+
+	degmax = max(ncenter,nσ)
+	
+	u = broadcast(^,Float64.(ax),(0:(degmax-1))')
+		
+	cy = u[:,1:ncenter]*center
+	
+	sy = u[:,1:nσ]*σ
+	left = abs.(ay[end] .- cy)
+	right = abs.(ay[1] .- cy)
+	return sum(hcat(left ,right ).*sy,dims=2)./(left.+right)
+end
+
+function get_LSF(profile,hwdth::Int) 
+	s = get_LSF_size(profile)
+	#s .= mean(s)
+	S = exp.(-1 ./ 2 .*(((-hwdth:hwdth))' ./ s).^2)
+	S = S ./ sum(S,dims=2)
+	return OffsetArray(S,:,-hwdth:hwdth)
+end
