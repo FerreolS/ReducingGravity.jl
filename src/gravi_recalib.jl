@@ -100,9 +100,9 @@ function normalize_data(data, S, photometry; baselines=baselines_list)
 	for (i,baseline) ∈ collect(enumerate(baselines))
 		T1,T2 = baseline
 		for (j,chnl) ∈ collect(enumerate(["A","B","C","D"]))
-			d = view(normalized,j,i,:,:)
-			photo1 = SS[j,i,:,T1,:]*photometry[T1]
-			photo2 = SS[j,i,:,T2,:]*photometry[T2]
+			d = normalized[j,i,:,:]
+			photo1 = max.(0,SS[j,i,:,T1,:]*photometry[T1])
+			photo2 = max.(0,SS[j,i,:,T2,:]*photometry[T2])
 			denom = sqrt.( photo1 .* photo2)
 			nd = (d - photo1 - photo2) / 2 / denom
 			nd.val[denom.==0] .= 0
