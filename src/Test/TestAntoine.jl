@@ -89,7 +89,8 @@ dispmodel=ReducingGravity.gravi_extract_disp_model(disp_filename)
 dnorm = ReducingGravity.normalize_data(wvsc,S,wvphotometric)
 fλ = ReducingGravity.recompute_wavelegnth(wvinterferometric,λ;lmin=15,lmax=200)
 nkt, phasorst,opl = ReducingGravity.recalibrate(dnorm, wvinterferometric , dispmodel, fλ, profiles; iter=4)
-#S,λ,wvidx = gravi_build_V2PM(profiles,baseline_phasors;λsampling=λ,closure_correction=clcorr)
+profiles = ReducingGravity.gravi_recalibrate_wavelength(profiles,nkt)
+S2,λ2,wvidx = gravi_build_V2PM(profiles,baseline_phasors,phasorst)
 
 fdark30 = readfits(first(filter(x -> (occursin(r"(DARK)", x.second.type) && x.second.Δt==30.0), flist)).first; ext="IMAGING_DATA_SC");
 goodpix30 = gravi_compute_badpix(fdark30,illuminated, spatialkernel=(11,1))
