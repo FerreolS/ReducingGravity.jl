@@ -167,3 +167,70 @@ function make_DtD(T::DataType,n)
 	J = vcat(1:n,1:(n-1),2:n)
 	Symmetric(sparse(I, J, V))
 end
+
+function build_sparse_interpolation_matrix(kernel::Kernel{T,N}, knots, samples) where {T,N}
+	lk = length(kernel) 
+	lin = length(samples)
+	col = length(knots) 
+	
+	nelement = lk * lin
+	L = zeros(Int,nelement)
+	C = zeros(Int,nelement)
+	V = zeros(T,nelement)
+	c = 1
+
+ 	for (l,sample) ∈ enumerate(samples)
+		offweights = InterpolationKernels.compute_offset_and_weights(kernel,T.(find_index(knots,sample))) 
+		weights = vcat(offweights[2]...)
+		off::Int = round(Int,offweights[1]) +1
+		L[c:(c+lk-1)] .= l
+		C[c:(c+lk-1)] .= min.(max.(off:(off+lk-1),1),col)
+		V[c:(c+lk-1)] .= weights
+		c += lk
+	end
+	return sparse(L,C,V,lin,col)
+end
+
+
+function build_sparse_interpolation_integration_matrix(kernel::Kernel{T,N}, knots,lowersample, uppersamples) where {T,N}
+
+	lin = length(uppersamples)
+	lin == length(lowersample) || throw(DimensionMismatch("uppersamples and lowersample must have the same length"))
+	col = length(knots) 
+
+	nelement = col * lin
+	L = zeros(Int,nelement)
+	C = zeros(Int,nelement)
+	V = zeros(T,nelement)
+	c = 1
+
+ 	for (l,(lsample,usample)) ∈ enumerate(zip(lowersample,uppersamples))
+		uoffweights = InterpolationKernels.compute_offset_and_weights(kernel,T.(find_index(knots,usample))) 
+		loffweights = InterpolationKernels.compute_offset_and_weights(kernel,T.(find_index(knots,lsample))) 
+		uweights = vcat(uoffweights[2]...)[2:end]
+		uoff::Int = round(Int,uoffweights[1]) +1
+
+		lweights = vcat(loffweights[2]...)[2:end]
+		loff::Int = round(Int,loffweights[1]) +1
+
+		lv = uoff - loff + lk -1
+		v = ones(T,lv)
+		v[(lv-lk+2):end] .= reverse_cumsum(uweights)
+		v[1:lk-1] .-= reverse_cumsum(lweights)
+		off = min.(max.(loff+1:(loff+lv),1),col)
+		L[c:(c+lv-1)] .= l
+		C[c:(c+lv-1)] .= off
+		V[c:(c+lv-1)] .= v
+		c += lv
+	end
+	return sparse(L[1:c-1],C[1:c-1],V[1:c-1],lin,col)
+end
+
+function reverse_cumsum(v)
+	out = similar(v)
+	out[end] = v[end]
+	@inbounds for i ∈ (length(v)-1):-1:1
+		out[i] = out[i+1] + v[i]
+	end
+	return out
+end
