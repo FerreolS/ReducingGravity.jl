@@ -35,12 +35,12 @@ function (self::InterpolatedSpectrum{T,B})(x::AbstractVector{T2}) where {T,B<:In
 	(;knots, kernel) = self.basis
 	notnan = isfinite.(x)
 	if any(notnan)
-		basis = build_interpolation_matrix(kernel,knots,view(x, notnan))
+		basis = build_sparse_interpolation_matrix(self.basis,view(x, notnan))
 		out = collect(x)
 		view(out,notnan) .= basis*self.coefs
 		return out
 	else
-		basis = build_interpolation_matrix(kernel,knots,x)
+		basis = build_sparse_interpolation_matrix(self.basis,x)
 		return basis*self.coefs
 	end
 end
@@ -65,7 +65,7 @@ function (self::InterpolatedSpectrum{T,B})(x::T2) where {T,B<:Interpolator,T2<:N
 	(;knots, kernel) = self.basis
 	x = min(x,knots[end])
 	x = max(x,knots[1])
-	basis = build_interpolation_matrix(kernel,knots,x)
+	basis = build_sparse_interpolation_matrix(kernel,knots,x)
 	return (basis*self.coefs)[1]
 end
 
@@ -138,7 +138,7 @@ function get_wavelength((;λ,λbnd, bbox)::SpectrumModel; bnd=false)
 		wv = λ
 	end
 	if bnd
-			wv= wv[ (λbnd[1] .<= wv .<=λbnd[2])]
+		wv = wv[ (λbnd[1] .<= wv .<=λbnd[2])]
 	else
 		wv[ .!(λbnd[1] .<= wv .<=λbnd[2])] .= NaN
 	end

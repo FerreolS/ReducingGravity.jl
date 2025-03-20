@@ -79,7 +79,7 @@ function compute_coefs(K::AbstractMatrix,
 						w::AbstractMatrix) 
 						
 	out = similar(y,(size(K,2),size(y,2)))
-	@inbounds Threads.@threads for i ∈ axes(y,2)
+	@inbounds for i ∈ axes(y,2)
 		out[:,i] .= compute_coefs(K,y[:,i],w[:,i])
 	end	
 #= 
@@ -191,9 +191,12 @@ function build_sparse_interpolation_matrix(kernel::Kernel{T,N}, knots, samples) 
 	return sparse(L,C,V,lin,col)
 end
 
+build_sparse_interpolation_matrix((;knots,kernel)::Interpolator, samples) = build_sparse_interpolation_matrix(kernel, knots, samples) 
+
 
 function build_sparse_interpolation_integration_matrix(kernel::Kernel{T,N}, knots,lowersample, uppersamples) where {T,N}
 
+	lk = length(kernel)
 	lin = length(uppersamples)
 	lin == length(lowersample) || throw(DimensionMismatch("uppersamples and lowersample must have the same length"))
 	col = length(knots) 
@@ -225,6 +228,16 @@ function build_sparse_interpolation_integration_matrix(kernel::Kernel{T,N}, knot
 	end
 	return sparse(L[1:c-1],C[1:c-1],V[1:c-1],lin,col)
 end
+
+build_sparse_interpolation_integration_matrix((;knots,kernel)::Interpolator, lowersample, uppersamples) = build_sparse_interpolation_integration_matrix(kernel, knots, lowersample, uppersamples) 
+function build_sparse_interpolation_integration_matrix((;knots,kernel)::Interpolator, samples)
+	half = similar(samples,length(samples)+1)
+	half[2:end-1] .= (samples[1:end-1] .+ samples[2:end])/2
+	half[1] = samples[1] - (samples[2] - samples[1])/2
+	half[end] = samples[end] + (samples[end] - samples[end-1])/2
+    build_sparse_interpolation_integration_matrix(kernel, knots, half[1:end-1], half[2:end])
+end 
+
 
 function reverse_cumsum(v)
 	out = similar(v)
