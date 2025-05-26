@@ -1,0 +1,100 @@
+\documentclass[a4paper,11pt,twoside]{scrartcl}
+\input{preamble}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{stmaryrd}
+\RequirePackage[hyperref,table]{xcolor}
+
+
+
+\renewcommand{\AdjointLetter}{\mathrm{T}}
+\usepackage{lmodern}
+\DeclareUnicodeCharacter{00B5}{\ensuremath{\mu}} % µ
+\DeclareUnicodeCharacter{2264}{\ensuremath{\le}} % ≤
+\DeclareUnicodeCharacter{2265}{\ensuremath{\ge}} % ≥
+\DeclareUnicodeCharacter{22C5}{\!\cdot\!}
+\usepackage{graphicx} % Required for inserting images
+
+
+\newcommand{\FT}{\textrm{FT}} % 
+\newcommand{\SC}{\textrm{SC}} % 
+
+\newcommand{\opd}{\textrm{opd}}
+
+
+\title{Notes errors on GRAVITY+ correlated flux}
+
+
+
+\begin{document}
+
+\maketitle
+
+%\section{correlated flux}
+For a given target, at the baseline $\{i,j\}$ and wavelength $\lambda$, the quantities of interest are the visibility amplitude $V_{i,j}(\lambda)$ and phase $ \phi_{i,j}(\lambda)$. At instant $t$, the instantaneous correlated flux $d_{i,j}(\lambda,t) $ is given by:
+\begin{equation}
+	d_{i,j}(\lambda,t) =  2\,p_{i}(t)\,f_{i}(\lambda)\,p_{j}(t)\,f_{j}(\lambda) \, V_{i,j}(\lambda) \,\E^{\jmath \, \left(\phi_{i,j}(\lambda) + \frac{2\pi}{\lambda}\, (\delta_{i}(t) - \delta_{j}(t))\right)} \,,%+ \epsilon_{i,j,\ell,t}\,,
+\end{equation}
+where $f_{i}(\lambda)$ is spectrum of the target filtered by the probably chromatic transmission of the optics of the telescope $i$. The nuisance terms:
+\begin{itemize}
+	\item $p_{i}(t)$: the injection in the fiber $i$ at instant $t$. It may also vary slightly with the wavelength due to refraction,
+	\item $\delta_{i}(t)$ is a optical path error for the beam $i$ at instant $t$. As there is a fringe tracker it should be small and centered,
+	%\item $ \epsilon_{i,j,\ell,t} $  represent a noise term accounting for readout noise, photon noise that can be correlated due to interpolation.
+\end{itemize}
+
+We can also define instantaneous flux for the telescope $i$ as:
+\begin{equation}
+	h_i(\lambda,t) =  p^2_{i}(t)\,f^2_{i}(\lambda)
+\end{equation}
+ 
+The GRAVITY instrument is composed of a fringe tracker (FT) and a science channel (SC) with two different integrated optic circuit for beam combination. Their integration times and spectral resolutions differ but as both beam-combiner share the same observing condition up to the interferometric lab their nuisance terms should follow the same statistic.
+
+We have thus two sets of observation:
+\begin{description}
+	\item[Fringe Tracker] is a broadband instrument running at sufficient high frequency ($\approx 900\,$Hz) to freeze the observing conditions:
+	\begin{align}
+		d^\FT_{i,j,\ell,t} & =  \int_{\Lambda_\ell} d_{i,j}(\lambda,t)\, \D{\lambda} + \epsilon_{i,j,\ell,t}\,,\\
+		& =  p_{i}(t)\,p_{j}(t)\, \int_{\Lambda_\ell} \,f_{i}(\lambda)\,f_{j}(\lambda) \, V_{i,j}(\lambda) 
+			 \E^{\jmath \, \left(\phi_{i,j}(\lambda) + \frac{2\pi}{\lambda}\, (\delta_{i}(t) - \delta_{j}(t))\right)} \D{\lambda} + \epsilon_{i,j,\ell,t}\,,
+	\end{align}
+	with its photometric channel $ g^\FT_{i,\ell,t} = p_i^2(t)\int_{\Lambda_\ell} f^2_{i}(\lambda) \D{\lambda} + \epsilon'_{i,\ell,t}$
+	%where $ g_{i,\ell} = \int_{\Lambda_\ell} f^2_{i}(\lambda) \D{\lambda}$ and $\V{\epsilon}$ is an additive noise  accounting for readout noise, photon noise that can be correlated.
+	\item[Science Channel] is a higher resolution instrument with long integration time $T$ (up to few minutes):
+	\begin{align}
+		d^\SC_{i,j,\lambda,k} & =  \int_{T_k} d_{i,j}(\lambda,t)\, \D{t} + \varepsilon_{i,j,\lambda,k}\,,\\
+		& =  2\,f_{i}(\lambda)\,f_{j}(\lambda)\, V_{i,j}(\lambda) \,\E^{\jmath \,\phi_{i,j}(\lambda)}\int_{T_k}  \, p_{i}(t)\,p_{j}(t) \,  \,\E^{\jmath \, \frac{2\pi}{\lambda}\, (\delta_{i}(t) - \delta_{j}(t))} \D{t} + \varepsilon_{i,j,\lambda,k}\,,
+	\end{align}
+	with its photometric channel  $ g^\SC_{i,\lambda,k} = f^2_{i}(\lambda) \int_{T_k} p^2_{i}(t) \D{t} + \varepsilon'_{i,\ell,t}$  
+\end{description}
+$\V{\epsilon}$ and $\V{\varepsilon}$ are noise terms accounting for readout noise, photon noise that can be correlated due to interpolation.
+
+
+\begin{align}
+	\phi_1(k) &= k \,n_1(k) \Delta_1\\
+	\phi_2(k) &= k \,n_2(k) \Delta_2\\
+	\phi_1(k) &= k \,n_3(k) \Delta_3
+\end{align}
+
+\begin{align}
+	\opd_{1,2}(k) &= k \left(\Delta_1\, n_1(k) - \Delta_2\, n_2(k) \right)\\
+	\opd_{2,3}(k) &= k \left(\Delta_2\, n_2(k) - \Delta_3\, n_3(k) \right)\\
+	\opd_{3,1}(k) &= k \left(\Delta_3\, n_3(k) - \Delta_1\, n_1(k) \right)
+\end{align}
+
+\begin{equation}
+	\Psi_{1,2,3}(k) = \opd_{1,2}(k) + \opd_{2,3}(k) +\opd_{3,1}(k) = 0
+\end{equation}
+
+\begin{align}
+	G_{i,j} &= \frac{\partial\, \opd_{i,j}(k)}{\partial k}\\
+	&= \Delta_i n_i(k) - \Delta_j n_j(k) + k \left(\Delta_i \frac{\partial n_i(k)}{\partial k} - \Delta_j \frac{\partial n_j(k)}{\partial k}\right)
+\end{align}
+
+\begin{align}
+	G_{1,2} + G_{2,3} + G_{3,1} &=  \Delta_1 n_1(k) - \Delta_2 n_2(k) + k \left(\Delta_1 \frac{\partial n_1(k)}{\partial k} - \Delta_2 \frac{\partial n_2(k)}{\partial k}\right)\nonumber\\
+	&+ \Delta_2 n_2(k) - \Delta_3 n_3(k) + k \left(\Delta_2 \frac{\partial n_2(k)}{\partial k} - \Delta_3 \frac{\partial n_3(k)}{\partial k}\right)\nonumber\\
+	&+ \Delta_3 n_3(k) - \Delta_1 n_1(k) + k \left(\Delta_3 \frac{\partial n_3(k)}{\partial k} - \Delta_1 \frac{\partial n_1(k)}{\partial k}\right)\\
+	&= 0
+\end{align}
+\end{document}
