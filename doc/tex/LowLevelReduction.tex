@@ -1,0 +1,158 @@
+\documentclass[a4paper,11pt,twoside]{scrartcl}
+\input{preamble}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{stmaryrd}
+\usepackage{url}
+
+\author{Ferréol Soulez}
+
+\RequirePackage[hyperref,table]{xcolor}
+
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric}
+\usetikzlibrary{positioning}
+\usetikzlibrary{fit}
+\tikzset{
+    node style/.style={rectangle, draw=black, rounded corners, minimum height=1.5em, text centered, font=\small, text width=3cm},
+    arrow style/.style={-{Latex}, thick},
+    group style/.style={rectangle, draw=gray, dashed, inner sep=0.3cm, rounded corners},
+}
+
+\renewcommand{\AdjointLetter}{\mathrm{T}}
+\usepackage{lmodern}
+\DeclareUnicodeCharacter{00B5}{\ensuremath{\mu}} % µ
+\DeclareUnicodeCharacter{2264}{\ensuremath{\le}} % ≤
+\DeclareUnicodeCharacter{2265}{\ensuremath{\ge}} % ≥
+\DeclareUnicodeCharacter{22C5}{\!\cdot\!}
+\usepackage{graphicx} % Required for inserting images
+
+\newcommand{\FT}{\textrm{FT}} % 
+\newcommand{\SC}{\textrm{SC}} % 
+
+\newcommand{\opd}{\textrm{opd}}
+
+\newcommand{\rd}{f} %raw data
+\newcommand{\bias}{c}
+\newcommand{\data}{m}
+\newcommand{\spec}{s}
+\newcommand{\profile}{p}
+\title{Notes on low-level reduction for GRAVITY}
+
+\begin{document}
+
+\maketitle
+\section{How low-level reduction is done in the GRAVITY pipeline}
+
+The algorithm and data flow of the low-level reduction up to the P2VM construction are described at \url{https://github.com/FerreolS/gravity_doc/blob/master/recipe/gravity_p2vm.md}.
+
+\section{Proposed algorithms}
+
+\subsection{Bias mask creation}
+
+The function \verb|gravi_data_create_bias_mask| identifies the illuminated pixels. It reproduces the function of the pipeline.
+
+\subsection{Detector clean up}
+The function \verb|gravi_data_detector_cleanup| removes line-wise biases from the raw data. These biases are estimated from the median of non-illuminated pixels in each line. The non-illuminated area is provided by the function \verb|gravi_data_create_bias_mask|. It returns the debiased data and the mean bias per line, which can be re-added to the data depending on the keyword \verb+keepbias+ (default true).
+
+\subsection{Bad pixel detection}
+The function \verb|gravi_compute_badpix| identifies bad pixels (usually from DARK frames) that are flagged as $b_k=0$. 
+\begin{enumerate}
+    \item Bias removal using \verb|gravi_data_detector_cleanup|, returning the line-wise average bias $\V{\bias}$,
+    \item Computing the 75th percentile image $\V\rd^{(75)}$ along the frame axis,
+    \item Computing the image $\V\rd^{m} $ from $\V\rd^{(75)}$ using a median filter with an 11x1 kernel (in MED),
+    \item Normalizing each pixel $k$: $         \rd_k^n = \frac{\rd_k^{m} -\rd_k^{(75)}}{\rd_{(75)} - b_k}$  
+    \item Estimating the overall standard deviation using the median absolute deviation $\mathcal{M}$ : $\sigma^s =  1.4826\, \mathcal{M}(\V\rd^n)$
+    \item From a threshold $\eta^s$  given by the user ($5$ by default), the good pixels are those $k$ that fulfill the following condition:
+    \begin{equation}
+        b_k = \left\{ \begin{array}{cl}
+                1 & \text{if }\, -\eta^s \,\sigma^s \leq \rd_k^n \leq \eta^s \,\sigma^s \\
+     0 & \text{otherwise}\,.
+      \end{array}
+        \right.
+    \end{equation}
+    
+\end{enumerate} 
+
+\subsection{Weighted data}
+
+Before processing, all the raw data $\V{f}$ are converted to "weighted data" that contains, for each pixel $k$, an estimate of both its expectation $\data_k$ and its precision (inverse variance) $w_k$. 
+
+\subsubsection{Non-modulated data}
+For data that are constant in time (DARK, FLAT, and SKY), the weighted data are estimated from the sample mean and sample variance along time. The weighted data are then estimated using the following steps:
+\begin{enumerate}
+       \item Bias removal using \verb|gravi_data_detector_cleanup|, returning the line-wise average bias $\V{\bias}$,
+       \item Filtering blinking pixels using the function  \verb+gravi_compute_blink+, which uses a median filter along the temporal dimension with a kernel $(1,1,5)$. The blinking pixels are detected by thresholding the normalized filtered image, similar to the method used for bad pixel detection. A blinking pixel at frame $t$ is flagged as $b_{k,t} = 0$,
+       \item Pixels blinking too much ($> 75\%$) are flagged as bad pixels ($b_{k} = 0$),
+       \item The sample mean and sample precision are computed from the remaining pixels:
+       \begin{align}
+            \data_k & = \frac{ \sum_t b_{k,t} \, (f_{k,t} - \bias_k)}{\sum_t b_{k,t}}\\
+            w_k & =  \frac{ \sum_t b_{k,t} \, (f_{k,t} - \data_k)^2}{\sum_t b_{k,t} - 3}
+       \end{align}
+       The '$-3$' term is probably an unnecessary debiasing constant.
+\end{enumerate}
+
+\subsubsection{Modulated data}
+
+For files where each frame is modulated (P2VM, WAVE, SCIENCE), the data are:
+\begin{align}
+    \data_k &= f_k - \bias_k\,, \\
+    w_k &= b_k \, g_k(f_k - \bias_k) + \sigma_k^{2}\,,
+\end{align}
+where $g_k$ and $\sigma_k$ are the gain and the readout noise at pixel $k$, respectively.
+
+\subsection{Computing the profile}
+
+The function \verb+gravi_compute_profile+ computes the spatial profile of each spectrum from flats. These flats can be either taken from FLAT data or extracted from non-modulated parts of the P2VM files, the latter being more robust as it contains more frames.
+
+Each spectrum is modeled as a Gaussian-like profile dispersed along the lines.  The position of its center $c_i$ and its width $a$ along the line $i$ are estimated by means of a polynomial fit. As the profile is not symmetric, the width can be different on the right and the left. At pixel $\profile(i,j)$ the profile is given by the following equation:
+\begin{align}
+    \profile_{i,j}(\V \alpha, \V\beta) &=  \exp\left(-\frac{\left(i - c_i(\V \alpha)\right)^2}{2\,a_{i,j}(\V \beta)}\right) \\
+    c_i(\V \alpha) &= \sum_{n=0} \alpha_n \, i^n \\
+    a_{i,j}(\V \beta) &=  \frac{j-j_0}{I} \, \sum_{n=0} \beta_{1,n} \, i^n  + \left(1 - \frac{j-j_0}{J}\right)  \, \sum_{n=0} \beta_{2,n} \, i^n \,,
+\end{align}
+where $J$ is the total width of the illuminated part of the profile in pixels, $J_0$ is the column index of the first pixel of the profile. 
+The polynomial coefficients $\V \alpha$ and  $\V\beta$ are estimated by minimizing the function:
+\begin{equation}
+    \mathcal{F}(\V \alpha, \V\beta)  = \sum_{i,j} w^F_{i,j} \left( q_i(\V \alpha, \V\beta)\, \profile_{i,j}(\V \alpha, \V\beta) - \data^F_{i,j}  \right)^2
+\end{equation} 
+where $\V \data^F $ and $\V w^F$  are the sample mean and sample precision, respectively, of the flat data. $q_i$ is a line-wise scaling factor that linearly depends on the data. Its expression is given by:
+\begin{equation}
+    q_i(\V \alpha, \V\beta) = \frac{\sum_j w^F_{i,j} \, \profile_{i,j}(\V \alpha, \V\beta)\, \data^F_{i,j}}{\sum_j w^F_{i,j} \, \profile^2_{i,j}(\V \alpha, \V\beta)}\,.
+\end{equation}
+
+
+This function is minimized using Powell's NEWOA algorithm, but the Nelder-Mead (simplex) algorithm is probably also acceptable. 
+
+\subsection{Estimation of gain and readout noise}
+
+The readout noise variance $\V \sigma^2$ and the gain $\V g$ are estimated by looking at the mean versus variance behavior across the FLAT and DARK observations. To that end, we use one DARK and two FLATs per spectrum (each spectrum has a flat per input beam). As estimating the variance and gain per pixel on only those three points would be too noisy, I propose to have line-wise estimates only and determine the gain and readout noise that miniizes:
+\begin{equation}
+    \left(g_i\, \data_{i,j}^M + \sigma_k^2 - \frac{1}{w^M_{i,j}} \right)^2 \qquad \forall\, j \text{ and } \forall  M \in \{ \textrm{FLAT},  \textrm{DARK}\}
+\end{equation}
+The gain and the readout noise are then estimated by linear regression.
+
+\subsection{Spectrum extraction}
+From a given profile, the value $\spec$ and the precision $\omega$ of each spectrum are extracted by the weighted sum of the flux along the columns. At line $i$ of the spectrum $C$, the value and the precision are given by:
+ \begin{align}
+    \omega^C_i = \sum_j w^C_{i,j} \, \profile^2_{i,j}(\V \alpha, \V\beta)\,, \\
+    \spec^C_i = \frac{\sum_j w^C_{i,j} \, \profile_{i,j}(\V \alpha, \V\beta)\, \data^C_{i,j}}{\omega^C_i}\,.
+\end{align}
+The data $\data^C$ and its weights $w^C$ are the dark/sky subtracted weighted data of the spectrum $C$ (SCIENCE, P2VM, or WAVE):
+\begin{align}
+    \data^C_{i,j} &= \rd^C_{i,j} - \data^D_{i,j}\,, \\
+    w^C_{i,j} &= \frac{b_{i,j}}{ \frac{1}{w^D_{i,j}} + \frac{ \rd^C_{i,j}}{g_i} + \frac{1}{12}} \,,
+\end{align}
+where $\rd^C$ is the raw value of the spectrum $C$ of either SCIENCE, P2VM, or WAVE, $\data^D$ is the dark/sky mean and $w^D$ its precision. The factor $1/12$  accounts for  the variance of the quantization noise of the detector, which is assumed to be uniformly distributed between $-0.5$ and $0.5$.
+To prevent outliers several extra steps can be applied:
+\begin{enumerate}
+    \item restricting the profile on the most illuminated pixels, i.e.  $s_{i,j} > 0.01$,
+    \item discarding non negative spectrum, i.e. $\data^C_{i,j} < 0$,
+    \item using a reweighted least-squares method to estimate the spectrum that restimates spectra several updating the weights $w^C_{i,j}$ at each iteration. The weights are updated as following ruels available in the litterature.
+\end{enumerate}
+
+
+
+\end{document}
