@@ -31,6 +31,6 @@ Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 ReducingGravityPlotsExt = ["Plots"]
 
 [compat]
-EasyFITS = "0.6.1"
-FITSHeaders = "0.4.1"
-OffsetArrays = "1.15.0"
+EasyFITS = "0.6"
+FITSHeaders = "0.4"
+OffsetArrays = "1"
