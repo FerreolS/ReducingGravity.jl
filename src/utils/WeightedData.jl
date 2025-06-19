@@ -40,12 +40,12 @@ A structure to hold weighted data, where `val` represents the values and `precis
 - `Base.imag(A::AbstractWeightedData)`: Returns the imaginary part of `val` and `precision`.
 
 # Combination Functions
-- `combine(B::NTuple{N,W})`: Combines multiple `WeightedData` objects.
-- `combine(A::AbstractWeightedData, B...)`: Combines multiple `WeightedData` objects.
-- `combine(B::AbstractArray{W})`: Combines an array of `WeightedData` objects.
-- `combine(A::AbstractWeightedData, B::AbstractArray{W})`: Combines a `WeightedData` object with an array of `WeightedData` objects.
-- `combine(A::AbstractWeightedData)`: Returns the `WeightedData` object itself.
-- `combine(A::AbstractWeightedData{T,N}, B::AbstractWeightedData{T,N})`: Combines two `WeightedData` objects.
+- `weightedmean(B::NTuple{N,W})`: weightedmeans multiple `WeightedData` objects.
+- `weightedmean(A::AbstractWeightedData, B...)`: weightedmeans multiple `WeightedData` objects.
+- `weightedmean(B::AbstractArray{W})`: weightedmeans an array of `WeightedData` objects.
+- `weightedmean(A::AbstractWeightedData, B::AbstractArray{W})`: weightedmeans a `WeightedData` object with an array of `WeightedData` objects.
+- `weightedmean(A::AbstractWeightedData)`: Returns the `WeightedData` object itself.
+- `weightedmean(A::AbstractWeightedData{T,N}, B::AbstractWeightedData{T,N})`: weightedmeans two `WeightedData` objects.
 
 # Utility Functions
 - `flagbadpix!(A::WeightedData{T,N}, badpix::Union{Array{Bool, N}, BitArray{N}})`: Flags bad pixels by setting their values and precision to zero.
@@ -58,105 +58,136 @@ A structure to hold weighted data, where `val` represents the values and `precis
 - `ChainRulesCore.frule(::typeof(getamplitude), data::AbstractWeightedData, model)`: Defines the forward-mode differentiation rule for `getamplitude`.
 """
 struct WeightedData{T,N,A<:AbstractArray{T,N},B<:AbstractArray{T,N}}# <: AbstractArray{T,N}
-	val::A
-	precision::B
-	function WeightedData(val::A,precision::B) where {T,N,A<:AbstractArray{T,N},B<:AbstractArray{T,N}} 
-		size(val) == size(precision) || error("WeightedData : val ≠ precision ")
-		new{T,N,A,B}(val,precision)
+    val::A
+    precision::B
+    function WeightedData(val::A, precision::B) where {T,N,A<:AbstractArray{T,N},B<:AbstractArray{T,N}}
+        size(val) == size(precision) || error("WeightedData : val ≠ precision ")
+        new{T,N,A,B}(val, precision)
     end
 end
-WeightedData(val::A,precision::Number) where {A<:Number} = WeightedData(vcat(val),vcat(A(precision)))
-WeightedData((;val, precision)::WeightedData) = WeightedData(val,precision)
-WeightedData((;val, precision)::WeightedData,I...) = WeightedData(val[I...],precision[I...])
+WeightedData(val::A, precision::Number) where {A<:Number} = WeightedData(vcat(val), vcat(A(precision)))
+WeightedData((; val, precision)::WeightedData) = WeightedData(val, precision)
+#WeightedData((;val, precision)::WeightedData,I...) = WeightedData(val[I...],precision[I...])
 
 
 AbstractWeightedData{T,N} = WeightedData{T,N,A,B} where {T,N,A,B}
 ConcreteWeightedData{T,N} = WeightedData{T,N,Array{T,N},Array{T,N}} where {T,N}
 
 Base.size(A::WeightedData) = size(A.val)
-Base.size(A::WeightedData,n::Int) = size(A.val,n)
+Base.size(A::WeightedData, n::Int) = size(A.val, n)
 Base.length(A::WeightedData) = prod(size(A))
-Base.axes(A::WeightedData,n::Int) = axes(A.val,n)
+Base.axes(A::WeightedData, n::Int) = axes(A.val, n)
 
 #Base.getindex(A::WeightedData, I::Vararg{Int, N}) where N	= WeightedData(A.val[I],A.precision[I])
 #Base.getindex(A::WeightedData, I::Int)	= WeightedData(A.val[I],A.precision[I])
-Base.getindex(A::WeightedData, I...)	= WeightedData(A, I...)
-function Base.setindex!(A::WeightedData, (;val,precision), I)
+Base.getindex((; val, precision)::WeightedData, I...) = WeightedData(val[I...], precision[I...]) #WeightedData(A, I...)
+function Base.setindex!(A::WeightedData, (; val, precision), I)
     setindex!(A.val, val, I)
     setindex!(A.precision, precision, I)
 end
+Base.firstindex((; val, precision)::WeightedData) = WeightedData(firstindex(val), firstindex(precision))
+Base.lastindex((; val, precision)::WeightedData) = WeightedData(lastindex(val), lastindex(precision))
+Base.IndexStyle(::Type{<:WeightedData}) = IndexCartesian()
 
-
-function Base.view(A::WeightedData, I...) 
-	WeightedData(view(A.val,I...),view(A.precision,I...))
+function Base.view(A::WeightedData, I...)
+    WeightedData(view(A.val, I...), view(A.precision, I...))
 end
 
-Base.:+(A::AbstractWeightedData, B::AbstractWeightedData)  = WeightedData(A.val .+ B.val, 1 ./ ( 1 ./ A.precision .+ 1 ./ B.precision))
-Base.:+(A::AbstractWeightedData, B)  = WeightedData(A.val .+ B, A.precision )
-Base.:-(A::AbstractWeightedData, B::AbstractWeightedData)  = WeightedData(A.val .- B.val, 1 ./ ( 1 ./ A.precision .+ 1 ./ B.precision))
-Base.:-(A::AbstractWeightedData, B)  = WeightedData(A.val .- B, A.precision )
-Base.:/(A::AbstractWeightedData, B)  = WeightedData(A.val ./ B, B.^2 .* A.precision)
-Base.:*( B, A::AbstractWeightedData)  = WeightedData(A.val .* B,  A.precision ./ B.^2 )
-Base.:*(A::AbstractWeightedData, B)  = B * A
+Base.:+(A::AbstractWeightedData, B::AbstractWeightedData) = WeightedData(A.val .+ B.val, 1 ./ (1 ./ A.precision .+ 1 ./ B.precision))
+Base.:+(A::AbstractWeightedData, B) = WeightedData(A.val .+ B, A.precision)
+Base.:-(A::AbstractWeightedData, B::AbstractWeightedData) = WeightedData(A.val .- B.val, 1 ./ (1 ./ A.precision .+ 1 ./ B.precision))
+Base.:-(A::AbstractWeightedData, B) = WeightedData(A.val .- B, A.precision)
+Base.:/(A::AbstractWeightedData, B) = WeightedData(A.val ./ B, B .^ 2 .* A.precision)
+Base.:*(B, A::AbstractWeightedData) = WeightedData(A.val .* B, A.precision ./ B .^ 2)
+Base.:*(A::AbstractWeightedData, B) = B * A
 
-Base.real(A::AbstractWeightedData) = WeightedData(real.(A.val),real.(A.precision))
-Base.imag(A::AbstractWeightedData) = WeightedData(real.(A.val),real.(A.precision))
+Base.real(A::AbstractWeightedData) = WeightedData(real.(A.val), real.(A.precision))
+Base.imag(A::AbstractWeightedData) = WeightedData(imag.(A.val), imag.(A.precision))
 
-combine(B::NTuple{N,W}) where {N,W <: AbstractWeightedData}  = combine(first(B),last(B, N-1)...)
-combine(A::AbstractWeightedData, B...)   = combine(combine(A,first(B)),last(B, length(B)-1)...)
-combine(B::AbstractArray{W}) where W <: AbstractWeightedData  = combine(first(B),last(B, length(B)-1)...)
-combine(A::AbstractWeightedData, B::AbstractArray{W}) where W <: AbstractWeightedData  = combine(combine(A,first(B)),last(B, length(B)-1)...)
-combine(A::AbstractWeightedData) = A
-function combine(A::AbstractWeightedData{T,N}, B::AbstractWeightedData{T,N}) where {T,N}
-	precision = A.precision .+B.precision
-	val =(A.precision .* A.val .+ B.precision .* B.val)./(precision)
-	view(val, iszero.(precision)) .= zero(T) 
-    WeightedData(val,precision )
+weightedmean(B::NTuple{N,W}) where {N,W<:AbstractWeightedData} = weightedmean(first(B), last(B, N - 1)...)
+weightedmean(A::AbstractWeightedData, B...) = weightedmean(weightedmean(A, first(B)), last(B, length(B) - 1)...)
+weightedmean(B::AbstractArray{W}) where W<:AbstractWeightedData = weightedmean(first(B), last(B, length(B) - 1)...)
+weightedmean(A::AbstractWeightedData, B::AbstractArray{W}) where W<:AbstractWeightedData = weightedmean(weightedmean(A, first(B)), last(B, length(B) - 1)...)
+weightedmean(A::AbstractWeightedData) = A
+function weightedmean(A::AbstractWeightedData{T,N}, B::AbstractWeightedData{T,N}) where {T,N}
+    precision = A.precision .+ B.precision
+    val = (A.precision .* A.val .+ B.precision .* B.val) ./ (precision)
+    view(val, iszero.(precision)) .= zero(T)
+    WeightedData(val, precision)
 end
 
-
-
-function flagbadpix!(A::WeightedData{T,N},badpix::Union{ Array{Bool, N},BitArray{N}}) where {T,N}
-    A.val[badpix] .= T(0) 
-	A.precision[badpix] .= T(0)
+#function Base.iterate(A::AbstractWeightedData, i)end
+function Base.iterate((; val, precision)::WeightedData)
+    vali, i = iterate(val)
+    preci, i = iterate(precision)
+    vali === nothing && return nothing
+    WeightedData(vali, preci), i
 end
 
-function likelihood(A::D,model::AbstractArray) where {D<:WeightedData}
-	return sum( (A.val .- model).^2 .* A.precision)/ 2
-end 
-
-function ChainRulesCore.rrule( ::typeof(likelihood),A::D,model::AbstractArray) where {D<:WeightedData}
-	r =(model .- A.val)
-	rp = r .* A.precision
-    likelihood_pullback(Δy) = (NoTangent(),NoTangent(), rp .* Δy)
-    return  sum(r.*rp) / 2, likelihood_pullback
-end
-
-function scaledlikelihood(A::D,model::AbstractArray{T,N}) where {D<:WeightedData,T,N}
-	α = max.(0,sum(model .* A.precision .* A.val,dims=2) ./ sum( model .*  A.precision .* model,dims=2) )
-	α[.!isfinite.(α)] .= T(0)
-	res = ( α .* model .- A.val) 
-	return sum(res.^2 .* A.precision)/2
-end
- 
-function ChainRulesCore.rrule( ::typeof(scaledlikelihood),A::D,model::AbstractArray) where {D<:WeightedData}
-	α = max.(0,sum(model .* A.precision .* A.val,dims=2) ./ sum( model .*  A.precision .* model,dims=2) )
-	r =( α .*model .- A.val)
-	rp = r .* A.precision
-    likelihood_pullback(Δy) = (NoTangent(),NoTangent(), α .* rp .* Δy)
-    return  sum(r.*rp) / 2, likelihood_pullback
+function Base.iterate((; val, precision)::WeightedData, i)
+    vali, it = iterate(val, i)
+    preci, it = iterate(precision, i)
+    vali === nothing && return nothing
+    WeightedData(vali, preci), it
 end
 
 
-
-
-function getamplitude(data::AbstractWeightedData,model)
-	#return max.(0, ldiv!(cholesky!(Symmetric(model' * ( data.precision.* model))),model'* (data.precision .* (data.val ))))
-	return max.(0,pinv(model' * ( data.precision.* model))*model'* (data.precision .* (data.val )))
+function flagbadpix!(A::WeightedData{T,N}, badpix::Union{Array{Bool,N},BitArray{N}}) where {T,N}
+    A.val[badpix] .= T(0)
+    A.precision[badpix] .= T(0)
 end
-function ChainRulesCore.rrule( ::typeof(getamplitude),data::AbstractWeightedData,model)
-	∂Y(_) = (NoTangent(),NoTangent(), ZeroTangent())
-	return getamplitude(data, model), ∂Y
+
+function likelihood(A::D, model::AbstractArray) where {D<:WeightedData}
+    return sum((A.val .- model) .^ 2 .* A.precision) / 2
+end
+
+function ChainRulesCore.rrule(::typeof(likelihood), A::D, model::AbstractArray) where {D<:WeightedData}
+    r = (model .- A.val)
+    rp = r .* A.precision
+    likelihood_pullback(Δy) = (NoTangent(), NoTangent(), rp .* Δy)
+    return sum(r .* rp) / 2, likelihood_pullback
+end
+
+function scaledlikelihood(A::D, model::AbstractArray{T,N}) where {D<:WeightedData,T,N}
+    α = max.(0, sum(model .* A.precision .* A.val, dims=2) ./ sum(model .* A.precision .* model, dims=2))
+    α[.!isfinite.(α)] .= T(0)
+    res = (α .* model .- A.val)
+    return sum(res .^ 2 .* A.precision) / 2
+end
+
+function ChainRulesCore.rrule(::typeof(scaledlikelihood), A::D, model::AbstractArray) where {D<:WeightedData}
+    α = max.(0, sum(model .* A.precision .* A.val, dims=2) ./ sum(model .* A.precision .* model, dims=2))
+    r = (α .* model .- A.val)
+    rp = r .* A.precision
+    likelihood_pullback(Δy) = (NoTangent(), NoTangent(), α .* rp .* Δy)
+    return sum(r .* rp) / 2, likelihood_pullback
+end
+
+
+function robustlikelihood((; val, precision)::WeightedData, model::AbstractArray{T,N}, s::Number) where {T,N}
+    γ = T(2.385)
+    r = (s / γ) .* sqrt.(precision) .* (model .- val)
+    return sum(log.(1 .+ r .^ 2))
+end
+
+# AD is much slower for robustlikelihood2
+function robustlikelihood2((; val, precision)::WeightedData, model::AbstractArray{T,N}, s::Number) where {T,N}
+    γ = T(2.385)
+    r = T(0)
+    @inbounds for (_, (v, p, m)) in enumerate(zip(val, precision, model))
+        r += log(T(1) + ((s / γ) * sqrt(p) * (m - v))^2)
+    end
+
+    return r
+end
+
+function getamplitude(data::AbstractWeightedData, model)
+    #return max.(0, ldiv!(cholesky!(Symmetric(model' * ( data.precision.* model))),model'* (data.precision .* (data.val ))))
+    return max.(0, pinv(model' * (data.precision .* model)) * model' * (data.precision .* (data.val)))
+end
+function ChainRulesCore.rrule(::typeof(getamplitude), data::AbstractWeightedData, model)
+    ∂Y(_) = (NoTangent(), NoTangent(), ZeroTangent())
+    return getamplitude(data, model), ∂Y
 end
 #= 
 function ChainRulesCore.frule( ::typeof(getamplitude),data::AbstractWeightedData,model)

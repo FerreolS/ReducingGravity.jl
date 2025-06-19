@@ -36,7 +36,7 @@ end
 
 build_interpolation_matrix((;knots,kernel)::Interpolator, samples) = build_interpolation_matrix(kernel, knots, samples) 
 
-function find_index(knots::StepRangeLen,sample)
+function find_index(knots::AbstractRange,sample)
 	return (sample  - first(knots)) /step(knots) +1
 end
 
@@ -230,7 +230,10 @@ function build_sparse_interpolation_integration_matrix(kernel::Kernel{T,N}, knot
 end
 
 build_sparse_interpolation_integration_matrix((;knots,kernel)::Interpolator, lowersample, uppersamples) = build_sparse_interpolation_integration_matrix(kernel, knots, lowersample, uppersamples) 
-function build_sparse_interpolation_integration_matrix((;knots,kernel)::Interpolator, samples)
+build_sparse_interpolation_integration_matrix((;knots,kernel)::Interpolator,samples) = build_sparse_interpolation_integration_matrix(kernel, knots, samples) 
+
+
+function build_sparse_interpolation_integration_matrix(kernel,knots, samples)
 	half = similar(samples,length(samples)+1)
 	half[2:end-1] .= (samples[1:end-1] .+ samples[2:end])/2
 	half[1] = samples[1] - (samples[2] - samples[1])/2
