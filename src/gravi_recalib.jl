@@ -13,6 +13,14 @@ function get_refractive_index(disp::DispModel,k)
 	return disp.coefs[1]  .+ sum([c .* (k .* disp.λ0 .- 1).^(i) for (i,c) ∈ enumerate(disp.coefs[2:end])	]) 
 end
 
+function get_refractive_index2(disp::DispModel, k)
+	n = disp.coefs[1]
+	for (i, c) in enumerate(disp.coefs[2:end])
+		n += c * (k * disp.λ0 - 1)^i
+	end
+	return n
+end
+
 function groupdelay2OPL(gd::Vector{Vector{T}}) where T <:AbstractFloat
 	# M = @SMatrix [ 1 -1 0 0
     #    1 0 -1 0
@@ -427,5 +435,5 @@ function build_interpolation_convolution_matrix(profile::SpectrumModel,(;knots,k
 	λ = get_wavelength(profile; bnd=true)
 	lsf = get_LSF(profile,hwdth)
 	K, C = build_interpolation_convolution_matrix(kernel, knots, λ,lsf)
-	return C * K
+	return C , K
 end

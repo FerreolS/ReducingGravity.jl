@@ -767,6 +767,12 @@ function gravi_build_V2PM(profiles::AbstractDict,
 
 	for (i,baseline) ∈ enumerate(baselines)
 		T1,T2 = baseline
+		if isnothing(closure_correction)
+			cl = 1
+		else
+			cl = InterpolatedSpectrum(closure_correction[i],Interpolator(λsampling,kernel))
+		end
+		
 		for  (ci,chnl) ∈ enumerate(["A","B","C","D"])
 			wvlngth = get_wavelength(profiles["$T1$T2-$chnl-C"]; bnd=true)
 			(mnw,mxw) =usable_wvlngth[i][:,ci]
@@ -798,6 +804,8 @@ function gravi_build_V2PM(profiles::AbstractDict,
 					Imcoherence = baseline_phasors[i][4,idx,ci]
 				else
 					coherence = complex.(baseline_phasors[i][3,idx,ci],baseline_phasors[i][4,idx,ci]) .* closure_correction[i][off:(off+wsz-1)]
+					#coherence = complex.(baseline_phasors[i][3,idx,ci],baseline_phasors[i][4,idx,ci]) .* cl.(λsampling[round(Int,λidx)]	)
+					#coherence = complex.(baseline_phasors[i][3,idx,ci],baseline_phasors[i][4,idx,ci]) .* cl.(λ)
 					Recoherence = real.(coherence)
 					Imcoherence = imag.(coherence)
 #					Recoherence = baseline_phasors[i][3,idx,ci] .* real.(closure_correction[i][off:(off+wsz-1)])
@@ -828,9 +836,20 @@ function gravi_build_V2PM(profiles::AbstractDict,
 				C[c:(c+wsz-1)] .= (((off:(off+wsz-1))).*(6*2+4)) .+ T2
 				L[c:(c+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
 				c = c+wsz
+#= 
+				PV[pc:(pc+wsz-1)] .= weights .*baseline_phasors[i][1,idx,ci] ./ 4
+				PC[pc:(pc+wsz-1)] .= (off:(off+wsz-1)).*4 .+ T1
+				PL[pc:(pc+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
+				pc = pc+wsz
+
+				PV[pc:(pc+wsz-1)] .= weights .*baseline_phasors[i][2,idx,ci] ./ 4
+				PC[pc:(pc+wsz-1)] .= (off:(off+wsz-1)).*4 .+ T2
+				PL[pc:(pc+wsz-1)] .= (( j-1)*(6*4)) .+ (i-1)*4 .+ ci
+				pc = pc+wsz =#
 			end 
 		end
 	end
+#	return sparse(PL[1:pc-1],PC[1:pc-1],PV[1:pc-1],nL,nPC),
 	return sparse(L[1:c-1],C[1:c-1],V[1:c-1],nL,nC),λsampling,usable_wvlngth
 end
 
@@ -1136,11 +1155,16 @@ function gravi_compute_envelope2(opd::AbstractVector{T}, λ,R) where {T}
 
 	coh_len = @. (2log(2)) / π * T(λ * R)
 
+	dopd = similar(opd)
+	dopd[1] = opd[2] - opd[1]
+	dopd[2:end-1] = (opd[3:end] .- opd[1:end-2])./2
+	dopd[end] = opd[end] - opd[end-1]
+	
 	# Gaussian enveloppe 
 	envellope = zeros(T,nλ,nt)
 	@inbounds @simd for idx ∈ CartesianIndices(envellope)
 		i, j = Tuple(idx)
-		envellope[i,j] = exp(-1*(opd[j]^2)/(coh_len[i]^2/2))
+		envellope[i,j] = exp(-1*(opd[j]^2)/(coh_len[i]^2/2)) * sinc(dopd[j]/λ[i])
 	end
 	return envellope
 end

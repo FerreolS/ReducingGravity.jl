@@ -223,7 +223,7 @@ function gravi_extract_profile_flats_from_p2vm(	flats::Vector{W},
 		profile = profiles[chnl[3:end]]
 		ch1 = gravi_extract_profile(flats[idx[1]] ,profile;kwds...)
 		ch2 = gravi_extract_profile(flats[idx[2]] ,profile;kwds...)
-		spctr[i] = chnl => combine(ch1,ch2)
+		spctr[i] = chnl => weightedmean(ch1,ch2)
 	end
 	return Dict(spctr)
 

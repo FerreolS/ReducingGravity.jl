@@ -3,7 +3,7 @@ module ReducingGravity
 using Accessors,
     ArrayTools,
     ChainRulesCore,
-    EasyFITS,
+    AstroFITS,
     FITSHeaders,
     InterpolationKernels,
     LinearAlgebra,
@@ -45,7 +45,6 @@ export gravi_data_create_bias_mask,
     listfitsfiles
 
 
-
 include("utils/FITSutils.jl")
 include("utils/utils.jl")
 include("utils/WeightedData.jl")
@@ -58,7 +57,7 @@ include("gravi_p2vm.jl")
 include("gravi_recalib.jl")
 include("gravi_newcalib.jl")
 
-#@enum Resolution LOW MED HIGH 
+#@enum Resolution LOW MED HIGH
 
 
 function gravi_data_create_bias_mask(darkfits::FitsFile)
@@ -82,30 +81,30 @@ function gravi_data_create_bias_mask(darkfits::FitsFile)
         hw = 4
     end
 
-    bbx = Dict{String,Tuple{Vector{Float64},CartesianIndices{2,Tuple{UnitRange{Int64},UnitRange{Int64}}}}}()
+    bbx = Dict{String, Tuple{Vector{Float64}, CartesianIndices{2, Tuple{UnitRange{Int64}, UnitRange{Int64}}}}}()
     sizehint!(bbx, nregion)
     rng = 1:nx
 
     if haskey(IMAGING_DETECTOR_SC, "LEFT")
 
-        x = Float64.([IMAGING_DETECTOR_SC[xn][1] for xn ∈ xname])
+        x = Float64.([IMAGING_DETECTOR_SC[xn][1] for xn in xname])
 
-        Vandermonde = reduce(hcat, [x .^ n for n ∈ 0:maxdeg])
+        Vandermonde = reduce(hcat, [x .^ n for n in 0:maxdeg])
         M = (Vandermonde' * Vandermonde) \ Vandermonde'
-        for i ∈ 1:nregion
-            y = Float64.([IMAGING_DETECTOR_SC[xn][2, i] for xn ∈ xname])
+        for i in 1:nregion
+            y = Float64.([IMAGING_DETECTOR_SC[xn][2, i] for xn in xname])
             coefs = M * y
-            cy = round.(Int, mapreduce(n -> coefs[n+1] .* rng .^ n, +, 0:maxdeg))
-            for (ix, iy) ∈ zip(rng, cy)
+            cy = round.(Int, mapreduce(n -> coefs[n + 1] .* rng .^ n, +, 0:maxdeg))
+            for (ix, iy) in zip(rng, cy)
                 view(illuminated, ix, max(1, iy - hw):min(ny, iy + hw)) .= true
             end
             push!(bbx, IMAGING_DETECTOR_SC["REGNAME"][i] => (coefs, CartesianIndices((1:nx, max(1, minimum(cy) - hw):min(ny, maximum(cy) + hw)))))
         end
     else
-        for i ∈ 1:nregion
+        for i in 1:nregion
             y = IMAGING_DETECTOR_SC["CENTER"][2, i]
 
-            for ix ∈ rng
+            for ix in rng
                 view(illuminated, ix, max(1, y - hw):min(ny, y + hw)) .= true
             end
             push!(bbx, IMAGING_DETECTOR_SC["REGNAME"][i] => ([Float64(IMAGING_DETECTOR_SC["CENTER"][2, i])], CartesianIndices((1:nx, max(1, minimum(y) - hw):min(ny, maximum(y) + hw)))))
@@ -115,16 +114,18 @@ function gravi_data_create_bias_mask(darkfits::FitsFile)
 end
 
 
-function gravi_data_detector_cleanup!(data::AbstractArray{T,3},
-    illuminated::BitMatrix;
-    keepbias=true,
-    kwd...) where {T}
+function gravi_data_detector_cleanup!(
+        data::AbstractArray{T, 3},
+        illuminated::BitMatrix;
+        keepbias = true,
+        kwd...
+    ) where {T}
     avgbias = zeros(T, size(data, 1), 1)
-    @inbounds for n ∈ axes(data, 1)
+    @inbounds for n in axes(data, 1)
         # Find non-illuminated pixels for this slice
         nonillum = .!illuminated[n, :]
         # Compute the median for each frame (along the third dimension)
-        mdata = map(median, eachslice(view(data, n, nonillum, :), dims=2))
+        mdata = map(median, eachslice(view(data, n, nonillum, :), dims = 2))
         # Subtract the median from all pixels in this slice
         view(data, n, :, :) .-= reshape(mdata, 1, :)
         avgbias[n] = mean(mdata)
@@ -136,29 +137,31 @@ function gravi_data_detector_cleanup!(data::AbstractArray{T,3},
 end
 
 
-
-function gravi_data_detector_cleanup(data::AbstractArray{T,3},
-    illuminated::BitMatrix;
-    kwd...) where {T}
+function gravi_data_detector_cleanup(
+        data::AbstractArray{T, 3},
+        illuminated::BitMatrix;
+        kwd...
+    ) where {T}
     cleaneddata = copy(data)
     avgbias = gravi_data_detector_cleanup!(cleaneddata, illuminated; kwd...)
     return avgbias, cleaneddata
 end
 
 
-
-function gravi_compute_badpix(rawdata::AbstractArray{T,N},
-    illuminated::BitMatrix;
-    spatialthresold=5,
-    spatialkernel=(5, 5)) where {T,N}
+function gravi_compute_badpix(
+        rawdata::AbstractArray{T, N},
+        illuminated::BitMatrix;
+        spatialthresold = 5,
+        spatialkernel = (5, 5)
+    ) where {T, N}
     bias, data = gravi_data_detector_cleanup(rawdata, illuminated)
     if N == 2
         mdata = data
     else
-        mdata = map(x -> quantile(x, 0.75), eachslice(data, dims=(1, 2)))
+        mdata = map(x -> quantile(x, 0.75), eachslice(data, dims = (1, 2)))
 
     end
-    medfilt = mapwindow(median, mdata, spatialkernel, border="circular")
+    medfilt = mapwindow(median, mdata, spatialkernel, border = "circular")
     sfiltered = (mdata .- medfilt) ./ max.(medfilt, bias)
     σs = mad(sfiltered)
     threshold = spatialthresold * σs
@@ -166,12 +169,14 @@ function gravi_compute_badpix(rawdata::AbstractArray{T,N},
 
 end
 
-function gravi_compute_blink(data::AbstractArray{T,3};
-    goodpix=true(size(data)[1:2]),
-    temporalthresold=5,
-    blinkkernel=5,
-    bias::B=20,
-    kwd...) where {T,B}
+function gravi_compute_blink(
+        data::AbstractArray{T, 3};
+        goodpix = true(size(data)[1:2]),
+        temporalthresold = 5,
+        blinkkernel = 5,
+        bias::B = 20,
+        kwd...
+    ) where {T, B}
 
 
     ffiltered = similar(data)
@@ -179,7 +184,7 @@ function gravi_compute_blink(data::AbstractArray{T,3};
         mdata = quantile(data[i, :], 0.5)
         b = B <: Number ? bias : bias[i[1]]
 
-        ffiltered[i, :] = (data[i, :] .- mapwindow(median, data[i, :], blinkkernel, border="circular")) ./ sqrt.(max.(mdata, b))
+        ffiltered[i, :] = (data[i, :] .- mapwindow(median, data[i, :], blinkkernel, border = "circular")) ./ sqrt.(max.(mdata, b))
     end
     σ = mad(view(ffiltered, goodpix, :))
     threshold = T.(temporalthresold * σ)
@@ -187,15 +192,17 @@ function gravi_compute_blink(data::AbstractArray{T,3};
     return blink
 end
 
-# unbiased estimator see  https://stats.stackexchange.com/questions/136976/find-an-unbiased-estimator-of-sigma-1  and "Aspects of multivariate statistical theory" 
-function gravi_create_weighteddata(data::AbstractArray{T,3},
-    illuminated::BitMatrix,
-    goodpix::BitMatrix;
-    cleanup=true,
-    filterblink=true,
-    unbiased=true,
-    bias=20,
-    kwd...) where {T}
+# unbiased estimator see  https://stats.stackexchange.com/questions/136976/find-an-unbiased-estimator-of-sigma-1  and "Aspects of multivariate statistical theory"
+function gravi_create_weighteddata(
+        data::AbstractArray{T, 3},
+        illuminated::BitMatrix,
+        goodpix::BitMatrix;
+        cleanup = true,
+        filterblink = true,
+        unbiased = true,
+        bias = 20,
+        kwd...
+    ) where {T}
 
     sz = size(data)[1:2]
 
@@ -205,8 +212,8 @@ function gravi_create_weighteddata(data::AbstractArray{T,3},
     end
 
     if filterblink
-        blink = gravi_compute_blink(data; bias=bias, goodpix=goodpix .&& illuminated, kwd...)
-        goodpix .&= (sum(blink, dims=3) .> max(3, 0.75 * size(blink, 3)))
+        blink = gravi_compute_blink(data; bias = bias, goodpix = goodpix .&& illuminated, kwd...)
+        goodpix .&= (sum(blink, dims = 3) .> max(3, 0.75 * size(blink, 3)))
     else
         blink = trues(size(data))
     end
@@ -240,20 +247,22 @@ function gravi_create_weighteddata(data::AbstractArray{T,3},
 end
 
 
-function gravi_create_weighteddata(data::AbstractArray{T,3},
-    illuminated::BitMatrix,
-    goodpix::BitMatrix,
-    gain,
-    ron;
-    cleanup=true,
-    keepbias=true,
-    correct_gain=false,
-    bndbox=CartesianIndices(goodpix),
-    kwd...) where {T}
+function gravi_create_weighteddata(
+        data::AbstractArray{T, 3},
+        illuminated::BitMatrix,
+        goodpix::BitMatrix,
+        gain,
+        ron;
+        cleanup = true,
+        keepbias = true,
+        correct_gain = false,
+        bndbox = CartesianIndices(goodpix),
+        kwd...
+    ) where {T}
 
 
     if cleanup
-        bias = gravi_data_detector_cleanup!(data, illuminated, keepbias=keepbias)
+        bias = gravi_data_detector_cleanup!(data, illuminated, keepbias = keepbias)
     end
     data = view(data, bndbox, :)
     gain = view(gain, bndbox.indices[1])
@@ -271,99 +280,108 @@ function gravi_create_weighteddata(data::AbstractArray{T,3},
     return weighteddata
 end
 
-function gravi_compute_ron(dark::AbstractWeightedData,
-    goodpix::BitMatrix,
-    gain)
+function gravi_compute_ron(
+        dark::AbstractWeightedData,
+        goodpix::BitMatrix,
+        gain
+    )
     return goodpix .* (1 ./ dark.precision .- dark.val ./ gain)
 end
 
-function gravi_compute_profile(flats::Vector{ConcreteWeightedData{T,N}},
-    bboxes::Dict{String,Tuple{B,C}};
-    center_degree=4,
-    σ_degree=4,
-    thrsld=0.1) where {T,N,C,B}
-    profile = Dict{String,SpectrumModel{C,Nothing,Nothing,Nothing}}()
-    Threads.@threads for tel1 ∈ 1:4
-        for tel2 ∈ 1:4
+function gravi_compute_profile(
+        flats::Vector{ConcreteWeightedData{T, N}},
+        bboxes::Dict{String, Tuple{B, C}};
+        center_degree = 4,
+        σ_degree = 4,
+        thrsld = 0.1
+    ) where {T, N, C, B}
+    profile = Dict{String, SpectrumModel{C, Nothing, Nothing, Nothing}}()
+    Threads.@threads for tel1 in 1:4
+        for tel2 in 1:4
             tel1 == tel2 && continue
             flatsum = flats[tel1] + flats[tel2]
-            for chnl ∈ ["A", "B", "C", "D"]
+            for chnl in ["A", "B", "C", "D"]
                 haskey(bboxes, "$tel1$tel2-$chnl-C") || continue
                 bndbx = bboxes["$tel1$tel2-$chnl-C"][2]
-                θ = fitprofile(flatsum, bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld, center_guess=bboxes["$tel1$tel2-$chnl-C"][1])
-                p = SpectrumModel(θ..., nothing, [0.0, +Inf], Vector{InterpolatedSpectrum{Nothing,Nothing}}(), bndbx)
+                θ = fitprofile(flatsum, bndbx; center_degree = center_degree, σ_degree = σ_degree, thrsld = thrsld, center_guess = bboxes["$tel1$tel2-$chnl-C"][1])
+                p = SpectrumModel(θ..., nothing, [0.0, +Inf], Vector{InterpolatedSpectrum{Nothing, Nothing}}(), bndbx)
                 push!(profile, "$tel1$tel2-$chnl-C" => p)
             end
         end
     end
-    return profiles
+    return profile
 end
 
-function gravi_compute_profile(flat::ConcreteWeightedData{T,N},
-    bboxes::Dict{String,Tuple{B,C}};
-    center_degree=4,
-    σ_degree=4,
-    thrsld=0.1) where {T,N,B,C}
-    profiles = Dict{String,SpectrumModel{C,Nothing,Nothing,Nothing}}()
-    Threads.@threads for (key, (center_guess, bndbx)) ∈ collect(bboxes)
-        θ = fitprofile(flat, bndbx; center_degree=center_degree, σ_degree=σ_degree, thrsld=thrsld, center_guess=center_guess)
-        p = SpectrumModel(θ..., nothing, [0.0, +Inf], Vector{InterpolatedSpectrum{Nothing,Nothing}}(), bndbx)
+function gravi_compute_profile(
+        flat::ConcreteWeightedData{T, N},
+        bboxes::Dict{String, Tuple{B, C}};
+        center_degree = 4,
+        σ_degree = 4,
+        thrsld = 0.1
+    ) where {T, N, B, C}
+    profiles = Dict{String, SpectrumModel{C, Nothing, Nothing, Nothing}}()
+    Threads.@threads for (key, (center_guess, bndbx)) in collect(bboxes)
+        θ = fitprofile(flat, bndbx; center_degree = center_degree, σ_degree = σ_degree, thrsld = thrsld, center_guess = center_guess)
+        p = SpectrumModel(θ..., nothing, [0.0, +Inf], Vector{InterpolatedSpectrum{Nothing, Nothing}}(), bndbx)
         push!(profiles, key => p)
     end
     return profiles
 end
 
-function gravi_compute_lamp_transmissions(spectra::Dict{String,ConcreteWeightedData{T,N}},
-    profiles::Dict{String,SpectrumModel{A,B,C,T2}};
-    lamp=nothing,
-    loop=5,
-    nb_transmission_knts=20,
-    nb_lamp_knts=400,
-    restart=false,
-    Chi2=1.0,
-    kwds...) where {T,T2,N,A,B,C}
+function gravi_compute_lamp_transmissions(
+        spectra::Dict{String, ConcreteWeightedData{T, N}},
+        profiles::Dict{String, SpectrumModel{A, B, C, T2}};
+        lamp = nothing,
+        loop = 5,
+        nb_transmission_knts = 20,
+        nb_lamp_knts = 400,
+        restart = false,
+        Chi2 = 1.0,
+        kwds...
+    ) where {T, T2, N, A, B, C}
 
     profiles, spectra = gravi_compute_wavelength_bounds(spectra, profiles)
     if C == Nothing || restart
-        profiles = gravi_init_transmissions(profiles; T=T, nb_transmission_knts=nb_transmission_knts, kwds...)
+        profiles = gravi_init_transmissions(profiles; T = T, nb_transmission_knts = nb_transmission_knts, kwds...)
     elseif nb_transmission_knts != (length(first(values(profiles)).transmissions[1].coefs))
-        profiles = gravi_init_transmissions(profiles; T=T, nb_transmission_knts=nb_transmission_knts, kwds...)
+        profiles = gravi_init_transmissions(profiles; T = T, nb_transmission_knts = nb_transmission_knts, kwds...)
     end
 
 
-    for _ ∈ 1:loop
-        lamp = gravi_compute_lamp(spectra, profiles; init_lamp=lamp, nb_lamp_knts=nb_lamp_knts, kwds...)
-        profiles = gravi_compute_transmissions(spectra, profiles, lamp; Chi2=Chi2, kwds...)
+    for _ in 1:loop
+        lamp = gravi_compute_lamp(spectra, profiles; init_lamp = lamp, nb_lamp_knts = nb_lamp_knts, kwds...)
+        profiles = gravi_compute_transmissions(spectra, profiles, lamp; Chi2 = Chi2, kwds...)
     end
     return (profiles, lamp)
 
 end
 
 
-function gravi_spectral_calibration(wave::AbstractWeightedData{T,2},
-    darkwave::AbstractWeightedData{T,2},
-    profiles::Dict{String,SpectrumModel{A,B,C,E}};
-    lines=argon[:, 1],
-    guess=argon[:, 2],
-    λorder=3,
-    kwds...) where {A,B,C,T,E}
+function gravi_spectral_calibration(
+        wave::AbstractWeightedData{T, 2},
+        darkwave::AbstractWeightedData{T, 2},
+        profiles::Dict{String, SpectrumModel{A, B, C, E}};
+        lines = argon[:, 1],
+        guess = argon[:, 2],
+        λorder = 3,
+        kwds...
+    ) where {A, B, C, T, E}
 
     wav = gravi_extract_profile(wave - darkwave, profiles; kwds...)
-    new_profiles = Dict{String,SpectrumModel{A,Vector{Float64},C,E}}()
-    Threads.@threads for tel1 ∈ 1:4
-        for tel2 ∈ 1:4
+    new_profiles = Dict{String, SpectrumModel{A, Vector{Float64}, C, E}}()
+    Threads.@threads for tel1 in 1:4
+        for tel2 in 1:4
             tel1 == tel2 && continue
-            for chnl ∈ ["A", "B", "C", "D"]
+            for chnl in ["A", "B", "C", "D"]
                 chname = "$tel1$tel2-$chnl-C"
                 haskey(profiles, chname) || continue
-                updatedprofile = gravi_spectral_calibration(wav[chname], profiles[chname]; lines=lines, guess=guess, λorder=λorder)
+                updatedprofile = gravi_spectral_calibration(wav[chname], profiles[chname]; lines = lines, guess = guess, λorder = λorder)
                 push!(new_profiles, chname => updatedprofile)
             end
         end
     end
     return new_profiles
 end
-
 
 
 end # module ReducingGravity

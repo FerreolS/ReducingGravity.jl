@@ -113,7 +113,7 @@ function gravi_extract_profile(data::AbstractWeightedData{T,N},
 								profile::SpectrumModel; 
 								restrict=0.01, 
 								nonnegative=false, 
-								robust=false,
+								robust=0,
 								kwds...
 								) where {T,N}
 	bbox = CartesianIndices((get_wavelength_bounds_inpixels(profile),profile.bbox.indices[2]))
@@ -139,10 +139,10 @@ function gravi_extract_profile(data::AbstractWeightedData{T,N},
 
 	wd = WeightedData(dropdims(positive .* α,dims=2), dropdims(positive .* αprecision,dims=2))
 
-	if robust # Talwar hard descender
+	if robust>0 # Talwar hard descender
 		res = sqrt.(precision) .* (positive .* α  .* model .- val) 
 		
-		good = (T(-2.795) .< res .<  T(2.795))
+		good = (T(-2.795*robust) .< res .<  T(2.795*robust))
 		αprecision =dropdims(sum( good .* model.^2 .* precision ,dims=2),dims=2)
 		α = dropdims(sum(good .* model .* precision .* val,dims=2),dims=2) ./ αprecision
 		
